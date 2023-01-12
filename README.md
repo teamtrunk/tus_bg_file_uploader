@@ -1,0 +1,1 @@
+The background files uploading manager that is built on the top of [Tus File Uploader](https://pub.dev/packages/tus_file_uploader)
