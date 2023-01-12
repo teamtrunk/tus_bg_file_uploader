@@ -17,6 +17,7 @@ class App extends StatefulWidget {
 class _AppState extends State<App> {
   final uploadingManager = TusBGFileUploaderManager();
   final files = <String, double>{};
+  var failedFiles = <String>[];
 
   StreamSubscription? progressSubscription;
   StreamSubscription? completionSubscription;
@@ -28,19 +29,6 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
     uploadingManager.setup('https://master.tus.io/files/');
-    progressSubscription = uploadingManager.progressStream.listen((event) {
-      final data = event as Map<String, dynamic>;
-      final progress = data['progress'] as int;
-      final filePath = data['filePath'];
-      setState(() {
-        files[filePath] = progress / 100;
-      });
-    });
-    completionSubscription = uploadingManager.completionStream.listen((event) {
-      setState(() {
-        updateUploadingStatus();
-      });
-    });
   }
 
   @override
@@ -59,26 +47,25 @@ class _AppState extends State<App> {
               IconButton(
                 onPressed: resumeAll,
                 icon: const Icon(Icons.play_arrow),
-              )
-            else
-              IconButton(
-                onPressed: () async {
-                  final result = await FilePicker.platform.pickFiles(
-                    allowMultiple: true,
-                  );
-                  setState(() {
-                    if (result != null) {
-                      for (final file in result.files) {
-                        final path = file.path;
-                        if (path != null && !files.containsKey(path)) {
-                          files[path] = 0;
-                        }
+              ),
+            IconButton(
+              onPressed: () async {
+                final result = await FilePicker.platform.pickFiles(
+                  allowMultiple: true,
+                );
+                setState(() {
+                  if (result != null) {
+                    for (final file in result.files) {
+                      final path = file.path;
+                      if (path != null && !files.containsKey(path)) {
+                        files[path] = 0;
                       }
                     }
-                  });
-                },
-                icon: const Icon(Icons.file_copy),
-              ),
+                  }
+                });
+              },
+              icon: const Icon(Icons.file_copy),
+            ),
           ],
         ),
         body: SingleChildScrollView(
@@ -89,7 +76,12 @@ class _AppState extends State<App> {
               (res, next) => [
                 ...res,
                 const SizedBox(height: 16),
-                ImageTile(next, progress: files[next]),
+                ImageTile(
+                  next,
+                  progress: files[next],
+                  failed: failedFiles.contains(next),
+                  onRetry: (path) => retryUpload(path),
+                ),
               ],
             ),
           ),
@@ -109,9 +101,23 @@ class _AppState extends State<App> {
     );
   }
 
-  Future<void> uploadAll() async {
+  void uploadAll() {
     setState(() {
       uploadingState = UploadingState.uploading;
+    });
+    progressSubscription = uploadingManager.progressStream.listen((event) {
+      final data = event as Map<String, dynamic>;
+      final progress = data['progress'] as int;
+      final filePath = data['filePath'];
+      setState(() {
+        onUploadingProgress(filePath, progress / 100);
+      });
+      print('progress: $progress');
+    });
+    completionSubscription = uploadingManager.completionStream.listen((event) {
+      setState(() {
+        onUploadingComplete();
+      });
     });
     Future.delayed(const Duration(milliseconds: 0)).then((value) {
       for (final path in files.keys) {
@@ -125,6 +131,34 @@ class _AppState extends State<App> {
         }
       }
     });
+  }
+
+  void retryUpload(String filePath) {
+    failedFiles.remove(filePath);
+    setState(() {
+      uploadingState = UploadingState.uploading;
+    });
+    progressSubscription = uploadingManager.progressStream.listen((event) {
+      final data = event as Map<String, dynamic>;
+      final progress = data['progress'] as int;
+      final filePath = data['filePath'];
+      setState(() {
+        onUploadingProgress(filePath, progress / 100);
+      });
+      print('progress: $filePath/$progress');
+    });
+    completionSubscription = uploadingManager.completionStream.listen((event) {
+      setState(() {
+        onUploadingComplete();
+      });
+    });
+    uploadingManager.uploadFile(
+      localFilePath: filePath,
+      repeat: true,
+      // completeCallback: onUploadingComplete,
+      // progressCallback: onUploadingProgress,
+      // failureCallback: onUploadingFailed,
+    );
   }
 
   void pauseAll() {
@@ -147,7 +181,11 @@ class _AppState extends State<App> {
     });
   }
 
-  void onUploadingComplete(String filePath, String url) {
+  void onUploadingComplete() async {
+    progressSubscription?.cancel();
+    completionSubscription?.cancel();
+    failedFiles = (await uploadingManager.getFailedFilePathList()).keys.toList();
+    print('failedFiles: ${failedFiles.length}');
     setState(() {
       updateUploadingStatus();
     });

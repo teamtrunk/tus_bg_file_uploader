@@ -108,14 +108,24 @@ class TusBGFileUploaderManager {
 
   Future<void> uploadFile({
     required String localFilePath,
+    bool repeat = false,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    prefs.addFileToPending(localFilePath);
+    if (repeat) await prefs.removeFileFromFailed(localFilePath);
+    print('failedFiles: ${(prefs.getFailedUploading)}');
+    await prefs.addFileToPending(localFilePath);
     final service = FlutterBackgroundService();
     final isRunning = await service.isRunning();
     if (!isRunning) {
       service.startService();
+    } else {
+      _updateProgress(prefs);
     }
+  }
+
+  Future<Map<String, String>> getFailedFilePathList() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getFailedUploading();
   }
 
   void pauseAllUploading() async {
@@ -140,11 +150,11 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static _onStart(ServiceInstance service) async {
     DartPluginRegistrant.ensureInitialized();
-    await _uploadFilesCallback(service);
     if (service is AndroidServiceInstance) {
       service.setAsForegroundService();
     }
     service.on('stopService').listen((event) => _dispose(service));
+    await _uploadFilesCallback(service);
   }
 
   @pragma('vm:entry-point')
@@ -159,6 +169,7 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static Future _dispose(ServiceInstance service) async {
     FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id);
+    service.invoke(_completionStream);
     service.stopSelf();
     _cache.clear();
   }
@@ -167,15 +178,14 @@ class TusBGFileUploaderManager {
   static Future<void> _uploadFilesCallback(ServiceInstance service) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    final storedUploads = _getStoredUploads(prefs, service);
-    await _uploadFiles(prefs, service, storedUploads);
+    final processingUploads = _getProcessingUploads(prefs, service);
+    await _uploadFiles(prefs, service, processingUploads);
     await prefs.resetUploading();
     _dispose(service);
   }
 
   @pragma('vm:entry-point')
   static void updateNotification({
-    required ServiceInstance service,
     required String title,
     required int progress,
     String? appIcon,
@@ -199,12 +209,14 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static void _onNextFileComplete({
-    required String filePath,
-    required ServiceInstance service,
-  }) async {
+  static Future<void> _onNextFileComplete({required String filePath}) async {
     final prefs = await SharedPreferences.getInstance();
-    prefs.addFileToComplete(filePath);
+    await prefs.addFileToComplete(filePath);
+    _updateProgress(prefs);
+  }
+
+  @pragma('vm:entry-point')
+  static void _updateProgress(SharedPreferences prefs) {
     final pendingFiles = prefs.getPendingUploading().length;
     final uploadingFiles = prefs.getProcessingUploading().length;
     final completeFiles = prefs.getCompleteUploading().length;
@@ -213,7 +225,6 @@ class TusBGFileUploaderManager {
     updateNotification(
       title: 'Uploaded $completeFiles of $allFiles files',
       progress: progress,
-      service: service,
     );
   }
 
@@ -230,30 +241,28 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static void _onNextFileFailed({
-    required String filePath,
-    required ServiceInstance service,
-  }) async {
+  static Future<void> _onNextFileFailed({required String filePath}) async {
     final prefs = await SharedPreferences.getInstance();
-    prefs.removeFile(filePath, processingStoreKey);
+    await prefs.addFileToFailed(filePath);
   }
 
   // PRIVATE ---------------------------------------------------------------------------------------
   static Future<void> _uploadFiles(
     SharedPreferences prefs,
     ServiceInstance service, [
-    Iterable<Future> storedUploads = const [],
+    Iterable<Future<TusFileUploader>> processingUploads = const [],
   ]) async {
     await prefs.reload();
     final pendingUploads = _getPendingUploads(prefs, service);
-    final total = storedUploads.length + pendingUploads.length;
+    final total = processingUploads.length + pendingUploads.length;
     if (total > 0) {
-      await Future.wait([...storedUploads, ...pendingUploads]);
+      final uploaderList = await Future.wait([...processingUploads, ...pendingUploads]);
+      await Future.wait(uploaderList.map((uploader) => uploader.upload()));
       await _uploadFiles(prefs, service);
     }
   }
 
-  static Iterable<Future> _getStoredUploads(
+  static Iterable<Future<TusFileUploader>> _getProcessingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
@@ -265,11 +274,11 @@ class TusBGFileUploaderManager {
         entry.value,
       );
       _cache[entry.key] = uploader;
-      await uploader.upload();
+      return uploader;
     });
   }
 
-  static Iterable<Future> _getPendingUploads(
+  static Iterable<Future<TusFileUploader>> _getPendingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
@@ -286,7 +295,7 @@ class TusBGFileUploaderManager {
       } else {
         prefs.removeFile(entry.key, processingStoreKey);
       }
-      await uploader.upload();
+      return uploader;
     });
   }
 
@@ -321,13 +330,9 @@ class TusBGFileUploaderManager {
           progress: progress,
           service: service,
         ),
-        completeCallback: (filePath, _) => _onNextFileComplete(
-          filePath: filePath,
-          service: service,
-        ),
+        completeCallback: (filePath, _) => _onNextFileComplete(filePath: filePath),
         failureCallback: (filePath, _) => _onNextFileFailed(
           filePath: filePath,
-          service: service,
         ),
       );
     } else {
@@ -342,13 +347,9 @@ class TusBGFileUploaderManager {
           progress: progress,
           service: service,
         ),
-        completeCallback: (filePath, _) => _onNextFileComplete(
-          filePath: filePath,
-          service: service,
-        ),
+        completeCallback: (filePath, _) => _onNextFileComplete(filePath: filePath),
         failureCallback: (filePath, _) => _onNextFileFailed(
           filePath: filePath,
-          service: service,
         ),
       );
     }

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 const pendingStoreKey = 'pending_uploading';
 const processingStoreKey = 'processing_uploading';
 const completeStoreKey = 'complete_uploading';
+const failedStoreKey = 'failed_uploading';
 const baseUrlStoreKey = 'base_files_uploading_url';
 const failOnLostConnectionStoreKey = 'fail_on_lost_connection';
 const appIconStoreKey = 'app_icon';
@@ -15,24 +16,24 @@ extension SharedPreferencesUtils on SharedPreferences {
     return getString(baseUrlStoreKey);
   }
 
-  void setBaseUrl(String value) {
-    setString(baseUrlStoreKey, value);
+  Future<bool> setBaseUrl(String value) async{
+    return setString(baseUrlStoreKey, value);
   }
 
   bool getFailOnLostConnection() {
     return getBool(failOnLostConnectionStoreKey) ?? false;
   }
 
-  void setFailOnLostConnection(bool value) {
-    setBool(failOnLostConnectionStoreKey, value);
+  Future<bool> setFailOnLostConnection(bool value) async{
+    return setBool(failOnLostConnectionStoreKey, value);
   }
 
   String? getAppIcon() {
     return getString(appIconStoreKey);
   }
 
-  void setAppIcon(String value) {
-    setString(appIconStoreKey, value);
+  Future<bool> setAppIcon(String value) async {
+    return setString(appIconStoreKey, value);
   }
 
   Map<String, String> getPendingUploading() {
@@ -47,28 +48,43 @@ extension SharedPreferencesUtils on SharedPreferences {
     return _getFilesForKey(completeStoreKey);
   }
 
-  void addFileToPending(String localPath) {
-    _updateMapEntry(localPath, pendingStoreKey);
+  Map<String, String> getFailedUploading() {
+    return _getFilesForKey(failedStoreKey);
   }
 
-  void addFileToProcessing(String localPath, String uploadUrl) {
-    removeFile(localPath, pendingStoreKey);
-    _updateMapEntry(localPath, processingStoreKey, uploadUrl);
+  Future<void> addFileToPending(String localPath) async{
+    await _updateMapEntry(localPath, pendingStoreKey);
   }
 
-  void addFileToComplete(String localPath) {
-    removeFile(localPath, processingStoreKey);
-    _updateMapEntry(localPath, completeStoreKey);
+  Future<void> addFileToProcessing(String localPath, String uploadUrl) async{
+    await removeFile(localPath, pendingStoreKey);
+    await _updateMapEntry(localPath, processingStoreKey, uploadUrl);
   }
 
-  void removeFile(String localPath, String storeKey) {
+  Future<void> addFileToComplete(String localPath) async{
+    await removeFile(localPath, processingStoreKey);
+    await _updateMapEntry(localPath, completeStoreKey);
+  }
+
+  Future<void> removeFile(String localPath, String storeKey) async{
     String? encodedResult = getString(storeKey);
     if (encodedResult != null) {
       final result = Map<String, String>.from(jsonDecode(encodedResult));
       result.remove(localPath);
-      setString(storeKey, jsonEncode(result));
+      await setString(storeKey, jsonEncode(result));
     }
   }
+
+  Future<void> addFileToFailed(String localPath) async{
+    await removeFile(localPath, processingStoreKey);
+    await _updateMapEntry(localPath, failedStoreKey);
+  }
+
+  Future<void> removeFileFromFailed(String localPath) async{
+    return removeFile(localPath, failedStoreKey);
+  }
+
+
 
   Future<void> resetUploading() async {
     await remove(pendingStoreKey);
@@ -88,7 +104,7 @@ extension SharedPreferencesUtils on SharedPreferences {
     return result;
   }
 
-  void _updateMapEntry(String key, String storeKey, [String value = '']) {
+  Future<bool> _updateMapEntry(String key, String storeKey, [String value = '']) async{
     String? encodedResult = getString(storeKey);
     late Map<String, String> result;
     if (encodedResult == null) {
@@ -97,6 +113,6 @@ extension SharedPreferencesUtils on SharedPreferences {
       result = Map<String, String>.from(jsonDecode(encodedResult));
     }
     result[key] = value;
-    setString(storeKey, jsonEncode(result));
+    return setString(storeKey, jsonEncode(result));
   }
 }

@@ -6,12 +6,16 @@ import 'package:flutter/material.dart';
 class ImageTile extends StatefulWidget {
   final String path;
   final double? progress;
+  final bool failed;
+  final void Function(String) onRetry;
 
   const ImageTile(
-      this.path, {
-        Key? key,
-        this.progress,
-      }) : super(key: key);
+    this.path, {
+    Key? key,
+    this.progress,
+    required this.failed,
+    required this.onRetry,
+  }) : super(key: key);
 
   @override
   State<ImageTile> createState() => _ImageTileState();
@@ -22,7 +26,9 @@ class _ImageTileState extends State<ImageTile> {
   Widget build(BuildContext context) {
     final progress = widget.progress ?? 0;
     late FileState fileState;
-    if (progress == 0) {
+    if(widget.failed){
+      fileState = FileState.failed;
+    } else if (progress == 0) {
       fileState = FileState.local;
     } else if (progress == 1) {
       fileState = FileState.loaded;
@@ -32,15 +38,16 @@ class _ImageTileState extends State<ImageTile> {
     return Container(
       height: 240,
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        image: DecorationImage(
-          image: FileImage(File(widget.path)),
-          fit: BoxFit.fitWidth,
-        ),
-      ),
       child: Stack(
         children: [
+          Image.file(
+            File(widget.path),
+            width: double.infinity,
+            fit: BoxFit.fitWidth,
+            errorBuilder: (context, error, stackTrace) {
+              return const Center(child: Icon(Icons.file_present_sharp, size: 100));
+            },
+          ),
           if (fileState != FileState.loaded)
             const Positioned(
               top: 0,
@@ -56,6 +63,11 @@ class _ImageTileState extends State<ImageTile> {
                 semanticsLabel: 'Circular progress indicator',
               ),
             ),
+          if (fileState == FileState.failed)
+            Center(child: ElevatedButton(
+              onPressed: () => widget.onRetry(widget.path),
+              child: const Text('Retry'),
+            ),)
         ],
       ),
     );
@@ -82,6 +94,7 @@ enum FileState {
   local,
   loading,
   loaded,
+  failed,
 }
 
 enum UploadingState {
