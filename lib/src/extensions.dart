@@ -53,6 +53,7 @@ extension SharedPreferencesUtils on SharedPreferences {
   }
 
   Future<void> addFileToPending(String localPath) async{
+    await removeFile(localPath, failedStoreKey);
     await _updateMapEntry(localPath, pendingStoreKey);
   }
 
@@ -87,8 +88,8 @@ extension SharedPreferencesUtils on SharedPreferences {
 
 
   Future<void> resetUploading() async {
-    await remove(pendingStoreKey);
-    await remove(processingStoreKey);
+    // await remove(pendingStoreKey);
+    // await remove(processingStoreKey);
     await remove(completeStoreKey);
   }
 

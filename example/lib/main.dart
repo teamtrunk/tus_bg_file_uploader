@@ -6,6 +6,6 @@ import 'src/app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  initAndroidNotifChannel();
+  await initAndroidNotifChannel();
   runApp(const App());
 }

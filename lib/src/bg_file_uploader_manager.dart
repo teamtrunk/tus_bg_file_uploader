@@ -27,13 +27,12 @@ enum _NotificationIds {
   const _NotificationIds(this.id);
 }
 
-void initAndroidNotifChannel() async {
+Future<void> initAndroidNotifChannel() async {
   await FlutterLocalNotificationsPlugin().initialize(
     const InitializationSettings(
       iOS: DarwinInitializationSettings(),
       android: AndroidInitializationSettings('ic_bg_service_small'),
     ),
-    onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     onDidReceiveNotificationResponse: (response) async {
       print('onDidReceiveNotificationResponse');
     },
@@ -51,17 +50,13 @@ void initAndroidNotifChannel() async {
       ?.createNotificationChannel(channel);
 }
 
-@pragma('vm:entry-point')
-void notificationTapBackground(NotificationResponse notificationResponse) {
-  FlutterBackgroundService().startService();
-}
-
 class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static final _instance = TusBGFileUploaderManager._();
   @pragma('vm:entry-point')
-  static final _cache = <String, TusFileUploader>{};
+  static final cache = <String, TusFileUploader>{};
 
+  @pragma('vm:entry-point')
   TusBGFileUploaderManager._();
 
   factory TusBGFileUploaderManager() {
@@ -106,55 +101,52 @@ class TusBGFileUploaderManager {
     );
   }
 
-  Future<void> uploadFile({
-    required String localFilePath,
-    bool repeat = false,
-  }) async {
+  Future<Map<String, String>> checkForUnfinishedUploads() async {
     final prefs = await SharedPreferences.getInstance();
-    if (repeat) await prefs.removeFileFromFailed(localFilePath);
-    print('failedFiles: ${(prefs.getFailedUploading)}');
-    await prefs.addFileToPending(localFilePath);
+    final pendingUploads = prefs.getPendingUploading();
+    final processingUploads = prefs.getProcessingUploading();
+
+    return pendingUploads..addAll(processingUploads);
+  }
+
+  Future<Map<String, String>> checkForFailedUploads() async {
+    final prefs = await SharedPreferences.getInstance();
+    final failedUploads = prefs.getFailedUploading();
+    return failedUploads;
+  }
+
+  Future<void> uploadFiles(List<String> localFilePathList) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    await Future.wait(localFilePathList.map((path) => prefs.addFileToPending(path)));
     final service = FlutterBackgroundService();
     final isRunning = await service.isRunning();
     if (!isRunning) {
-      service.startService();
-    } else {
-      _updateProgress(prefs);
+      await service.startService();
     }
   }
 
-  Future<Map<String, String>> getFailedFilePathList() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getFailedUploading();
-  }
+  void resumeAllUploading() async {
+    final unfinishedFiles = await checkForUnfinishedUploads();
+    if (unfinishedFiles.isEmpty) return;
 
-  void pauseAllUploading() async {
-    _cache.forEach((key, value) {
-      value.pause();
-    });
+    final service = FlutterBackgroundService();
+    final isRunning = await service.isRunning();
+    if (!isRunning) {
+      await service.startService();
+    }
   }
 
   // BACKGROUND ------------------------------------------------------------------------------------
-  @pragma('vm:entry-point')
-  void resumeAllUploading() async {
-    final service = FlutterBackgroundService();
-    final isRunning = await service.isRunning();
-    if (!isRunning) {
-      service.startService();
-    }
-    _cache.forEach((key, value) {
-      value.upload();
-    });
-  }
-
   @pragma('vm:entry-point')
   static _onStart(ServiceInstance service) async {
     DartPluginRegistrant.ensureInitialized();
     if (service is AndroidServiceInstance) {
       service.setAsForegroundService();
     }
-    service.on('stopService').listen((event) => _dispose(service));
-    await _uploadFilesCallback(service);
+    service.on('stopService').listen((_) => _dispose(service));
+
+    _uploadFilesCallback(service);
   }
 
   @pragma('vm:entry-point')
@@ -167,86 +159,83 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static Future _dispose(ServiceInstance service) async {
-    FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id);
-    service.invoke(_completionStream);
-    service.stopSelf();
-    _cache.clear();
-  }
-
-  @pragma('vm:entry-point')
   static Future<void> _uploadFilesCallback(ServiceInstance service) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     final processingUploads = _getProcessingUploads(prefs, service);
     await _uploadFiles(prefs, service, processingUploads);
+    a = 0;
+    await prefs.reload();
     await prefs.resetUploading();
     _dispose(service);
   }
 
-  @pragma('vm:entry-point')
-  static void updateNotification({
-    required String title,
-    required int progress,
-    String? appIcon,
-  }) {
-    FlutterLocalNotificationsPlugin().show(
-      _NotificationIds.uploadProgress.id,
-      title,
-      '',
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          'my_foreground',
-          'MY FOREGROUND SERVICE',
-          showProgress: true,
-          progress: progress,
-          maxProgress: 100,
-          icon: appIcon ?? 'ic_bg_service_small',
-          ongoing: true,
-        ),
-      ),
-    );
-  }
+  static var a = 0;
 
   @pragma('vm:entry-point')
   static Future<void> _onNextFileComplete({required String filePath}) async {
+    a++;
+    // if(a == 1) throw Exception('');
     final prefs = await SharedPreferences.getInstance();
     await prefs.addFileToComplete(filePath);
-    _updateProgress(prefs);
+    await _updateProgress(currentFileProgress: 1);
   }
 
   @pragma('vm:entry-point')
-  static void _updateProgress(SharedPreferences prefs) {
-    final pendingFiles = prefs.getPendingUploading().length;
-    final uploadingFiles = prefs.getProcessingUploading().length;
-    final completeFiles = prefs.getCompleteUploading().length;
-    final allFiles = pendingFiles + uploadingFiles + completeFiles;
-    final progress = (completeFiles / allFiles * 100).toInt();
-    updateNotification(
-      title: 'Uploaded $completeFiles of $allFiles files',
-      progress: progress,
-    );
-  }
-
-  @pragma('vm:entry-point')
-  static void _onProgress({
+  static Future<void> _onProgress({
     required String localPath,
     required double progress,
     required ServiceInstance service,
-  }) {
+  }) async {
     service.invoke(_progressStream, {
       "filePath": localPath,
       "progress": (progress * 100).toInt(),
     });
+    await _updateProgress(currentFileProgress: progress);
   }
 
   @pragma('vm:entry-point')
-  static Future<void> _onNextFileFailed({required String filePath}) async {
+  static Future<void> _updateProgress({required double currentFileProgress}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final pendingFiles = prefs.getPendingUploading().length;
+    final uploadingFiles = prefs.getProcessingUploading().length;
+    final completeFiles = prefs.getCompleteUploading().length;
+    final failedFiles = prefs.getFailedUploading().length;
+    final allFiles = pendingFiles + uploadingFiles + completeFiles + failedFiles;
+    final int progress;
+    final String message;
+    final bool iosShowProgress;
+    if (allFiles == 1) {
+      progress = (currentFileProgress * 100).toInt();
+      message = 'Uploading file';
+      iosShowProgress = true;
+    } else {
+      progress = (completeFiles / allFiles * 100).toInt();
+      message = 'Uploaded $completeFiles of $allFiles files';
+      iosShowProgress = false;
+    }
+    await updateNotification(
+      title: message,
+      progress: progress,
+      iosShowProgress: iosShowProgress,
+    );
+  }
+
+
+
+  @pragma('vm:entry-point')
+  static Future<void> _onNextFileFailed({
+    required String filePath,
+    required ServiceInstance service,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.addFileToFailed(filePath);
+    service.invoke(_failureStream, {'filePath': filePath});
   }
 
   // PRIVATE ---------------------------------------------------------------------------------------
+  @pragma('vm:entry-point')
   static Future<void> _uploadFiles(
     SharedPreferences prefs,
     ServiceInstance service, [
@@ -262,33 +251,35 @@ class TusBGFileUploaderManager {
     }
   }
 
+  @pragma('vm:entry-point')
   static Iterable<Future<TusFileUploader>> _getProcessingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
     final uploadingFiles = prefs.getProcessingUploading();
-    return uploadingFiles.entries.where((e) => !_cache.containsKey(e.key)).map((entry) async {
+    return uploadingFiles.entries.where((e) => !cache.containsKey(e.key)).map((entry) async {
       final uploader = await _uploaderFromPath(
         service,
         entry.key,
         entry.value,
       );
-      _cache[entry.key] = uploader;
+      cache[entry.key] = uploader;
       return uploader;
     });
   }
 
+  @pragma('vm:entry-point')
   static Iterable<Future<TusFileUploader>> _getPendingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
     final pendingFiles = prefs.getPendingUploading();
-    return pendingFiles.entries.where((e) => !_cache.containsKey(e.key)).map((entry) async {
+    return pendingFiles.entries.where((e) => !cache.containsKey(e.key)).map((entry) async {
       final uploader = await _uploaderFromPath(
         service,
         entry.key,
       );
-      _cache[entry.key] = uploader;
+      cache[entry.key] = uploader;
       final uploadUrl = await uploader.setupUploadUrl();
       if (uploadUrl != null) {
         prefs.addFileToProcessing(entry.key, uploadUrl);
@@ -299,6 +290,7 @@ class TusBGFileUploaderManager {
     });
   }
 
+  @pragma('vm:entry-point')
   static Future<TusFileUploader> _uploaderFromPath(
     ServiceInstance service,
     String path, [
@@ -325,14 +317,15 @@ class TusBGFileUploaderManager {
         baseUrl: Uri.parse(baseUrl),
         headers: resultHeaders,
         failOnLostConnection: failOnLostConnection,
-        progressCallback: (filePath, progress) => _onProgress(
+        progressCallback: (filePath, progress) async => _onProgress(
           localPath: filePath,
           progress: progress,
           service: service,
         ),
-        completeCallback: (filePath, _) => _onNextFileComplete(filePath: filePath),
-        failureCallback: (filePath, _) => _onNextFileFailed(
+        completeCallback: (filePath, _) async => _onNextFileComplete(filePath: filePath),
+        failureCallback: (filePath, _) async => _onNextFileFailed(
           filePath: filePath,
+          service: service,
         ),
       );
     } else {
@@ -342,16 +335,56 @@ class TusBGFileUploaderManager {
         uploadUrl: Uri.parse(uploadUrl),
         failOnLostConnection: failOnLostConnection,
         headers: resultHeaders,
-        progressCallback: (filePath, progress) => _onProgress(
+        progressCallback: (filePath, progress) async => _onProgress(
           localPath: filePath,
           progress: progress,
           service: service,
         ),
-        completeCallback: (filePath, _) => _onNextFileComplete(filePath: filePath),
-        failureCallback: (filePath, _) => _onNextFileFailed(
+        completeCallback: (filePath, _) async => _onNextFileComplete(filePath: filePath),
+        failureCallback: (filePath, _) async => _onNextFileFailed(
           filePath: filePath,
+          service: service,
         ),
       );
     }
+  }
+
+  @pragma('vm:entry-point')
+  static Future<void> updateNotification({
+    required String title,
+    required int progress,
+    required bool iosShowProgress,
+    String? appIcon,
+  }) async {
+    await FlutterLocalNotificationsPlugin().show(
+      _NotificationIds.uploadProgress.id,
+      title,
+      '',
+      NotificationDetails(
+          android: AndroidNotificationDetails(
+            'my_foreground',
+            'MY FOREGROUND SERVICE',
+            showProgress: true,
+            progress: progress,
+            maxProgress: 100,
+            icon: appIcon ?? 'ic_bg_service_small',
+            ongoing: true,
+          ),
+          iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              subtitle: iosShowProgress ? 'Progress $progress%' : null,
+              interruptionLevel: InterruptionLevel.passive
+          )
+      ),
+    );
+  }
+
+  @pragma('vm:entry-point')
+  static Future _dispose(ServiceInstance service) async {
+    await Future.delayed(const Duration(seconds: 2)).whenComplete(
+        () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
+    service.invoke(_completionStream);
+    service.stopSelf();
+    cache.clear();
   }
 }
