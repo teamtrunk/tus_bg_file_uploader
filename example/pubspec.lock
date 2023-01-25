@@ -426,7 +426,7 @@ packages:
       name: tus_file_uploader
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "0.0.10"
+    version: "0.0.11"
   typed_data:
     dependency: transitive
     description:

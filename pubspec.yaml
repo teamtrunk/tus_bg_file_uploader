@@ -20,7 +20,7 @@ dependencies:
   flutter_background_service_android: ^3.0.3
 
   shared_preferences: ^2.0.15
-  tus_file_uploader: ^0.0.10
+  tus_file_uploader: ^0.0.11
   cross_file: ^0.3.3+2
   path_provider: ^2.0.11
 
