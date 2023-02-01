@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:example/src/FileModel.dart';
+import 'package:example/src/file_model.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -52,7 +52,7 @@ class _AppState extends State<App> {
       }
     });
     subscribeUpdates();
-    subscribeCompletion();
+    subscribeFileCompletion();
     subscribeConnectionState();
     subscribeFailure();
     uploadingManager.setup('https://master.tus.io/files/').whenComplete(() => resumeAll());
@@ -145,9 +145,13 @@ class _AppState extends State<App> {
     });
   }
 
-  void subscribeCompletion() {
+  void subscribeFileCompletion() {
     uploadingManager.completionStream.listen((event) {
-      onUploadingComplete();
+      final data = event as Map<String, dynamic>;
+      final filePath = data['filePath'] as String;
+      final uploadUrl = data['url'] as String;
+      files.firstWhere((element) => element.path == filePath).url = uploadUrl;
+      updateUploadingStatus();
     });
   }
 
@@ -208,10 +212,6 @@ class _AppState extends State<App> {
     setState(() {
       files.firstWhere((file) => file.path == filePath).progress = progress;
     });
-  }
-
-  void onUploadingComplete() async {
-    updateUploadingStatus();
   }
 
   void onUploadingFailed(String filePath) {

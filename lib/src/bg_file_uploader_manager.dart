@@ -164,21 +164,21 @@ class TusBGFileUploaderManager {
     await prefs.reload();
     final processingUploads = _getProcessingUploads(prefs, service);
     await _uploadFiles(prefs, service, processingUploads);
-    a = 0;
     await prefs.reload();
     await prefs.resetUploading();
     _dispose(service);
   }
 
-  static var a = 0;
-
   @pragma('vm:entry-point')
-  static Future<void> _onNextFileComplete({required String filePath}) async {
-    a++;
-    // if(a == 1) throw Exception('');
+  static Future<void> _onNextFileComplete({
+    required ServiceInstance service,
+    required String filePath,
+    required String uploadUrl,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.addFileToComplete(filePath);
     await _updateProgress(currentFileProgress: 1);
+    service.invoke(_completionStream, {'filePath': filePath, 'url' : uploadUrl});
   }
 
   @pragma('vm:entry-point')
@@ -221,8 +221,6 @@ class TusBGFileUploaderManager {
       iosShowProgress: iosShowProgress,
     );
   }
-
-
 
   @pragma('vm:entry-point')
   static Future<void> _onNextFileFailed({
@@ -322,7 +320,11 @@ class TusBGFileUploaderManager {
           progress: progress,
           service: service,
         ),
-        completeCallback: (filePath, _) async => _onNextFileComplete(filePath: filePath),
+        completeCallback: (filePath, uploadUrl) async => _onNextFileComplete(
+          service: service,
+          filePath: filePath,
+          uploadUrl: uploadUrl,
+        ),
         failureCallback: (filePath, _) async => _onNextFileFailed(
           filePath: filePath,
           service: service,
@@ -340,7 +342,11 @@ class TusBGFileUploaderManager {
           progress: progress,
           service: service,
         ),
-        completeCallback: (filePath, _) async => _onNextFileComplete(filePath: filePath),
+        completeCallback: (filePath, uploadUrl) async => _onNextFileComplete(
+          service: service,
+          filePath: filePath,
+          uploadUrl: uploadUrl,
+        ),
         failureCallback: (filePath, _) async => _onNextFileFailed(
           filePath: filePath,
           service: service,
@@ -373,9 +379,7 @@ class TusBGFileUploaderManager {
           iOS: DarwinNotificationDetails(
               presentAlert: true,
               subtitle: iosShowProgress ? 'Progress $progress%' : null,
-              interruptionLevel: InterruptionLevel.passive
-          )
-      ),
+              interruptionLevel: InterruptionLevel.passive)),
     );
   }
 
@@ -383,7 +387,6 @@ class TusBGFileUploaderManager {
   static Future _dispose(ServiceInstance service) async {
     await Future.delayed(const Duration(seconds: 2)).whenComplete(
         () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
-    service.invoke(_completionStream);
     service.stopSelf();
     cache.clear();
   }

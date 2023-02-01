@@ -88,8 +88,6 @@ extension SharedPreferencesUtils on SharedPreferences {
 
 
   Future<void> resetUploading() async {
-    // await remove(pendingStoreKey);
-    // await remove(processingStoreKey);
     await remove(completeStoreKey);
   }
 
