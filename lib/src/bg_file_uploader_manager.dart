@@ -34,7 +34,7 @@ Future<void> initAndroidNotifChannel() async {
       android: AndroidInitializationSettings('ic_bg_service_small'),
     ),
     onDidReceiveNotificationResponse: (response) async {
-      print('onDidReceiveNotificationResponse');
+      // print('onDidReceiveNotificationResponse');
     },
   );
 
