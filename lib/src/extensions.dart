@@ -58,7 +58,7 @@ extension SharedPreferencesUtils on SharedPreferences {
   Map<String, String> getMetadata() {
     String? encodedResult = getString(metadataKey);
     if (encodedResult != null) {
-      return jsonDecode(encodedResult);
+      return Map.castFrom<String,dynamic, String, String>(jsonDecode(encodedResult));
     }
     return {};
   }
@@ -66,7 +66,7 @@ extension SharedPreferencesUtils on SharedPreferences {
   Map<String, String> getHeaders() {
     String? encodedResult = getString(headersKey);
     if (encodedResult != null) {
-      return jsonDecode(encodedResult);
+      return Map.castFrom<String,dynamic, String, String>(jsonDecode(encodedResult));
     }
     return {};
   }
@@ -83,7 +83,7 @@ extension SharedPreferencesUtils on SharedPreferences {
       await setString(metadataKey, jsonEncode(metadata));
     }
     if (headers != null) {
-      await setString(headersKey, jsonEncode(metadata));
+      await setString(headersKey, jsonEncode(headers));
     }
   }
 
