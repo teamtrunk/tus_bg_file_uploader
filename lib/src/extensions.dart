@@ -9,6 +9,9 @@ const failedStoreKey = 'failed_uploading';
 const baseUrlStoreKey = 'base_files_uploading_url';
 const failOnLostConnectionStoreKey = 'fail_on_lost_connection';
 const appIconStoreKey = 'app_icon';
+const customSchemeKey = 'custom_scheme';
+const metadataKey = 'metadata';
+const headersKey = 'headers';
 
 extension SharedPreferencesUtils on SharedPreferences {
   // PUBLIC ----------------------------------------------------------------------------------------
@@ -16,7 +19,7 @@ extension SharedPreferencesUtils on SharedPreferences {
     return getString(baseUrlStoreKey);
   }
 
-  Future<bool> setBaseUrl(String value) async{
+  Future<bool> setBaseUrl(String value) async {
     return setString(baseUrlStoreKey, value);
   }
 
@@ -24,7 +27,7 @@ extension SharedPreferencesUtils on SharedPreferences {
     return getBool(failOnLostConnectionStoreKey) ?? false;
   }
 
-  Future<bool> setFailOnLostConnection(bool value) async{
+  Future<bool> setFailOnLostConnection(bool value) async {
     return setBool(failOnLostConnectionStoreKey, value);
   }
 
@@ -52,22 +55,60 @@ extension SharedPreferencesUtils on SharedPreferences {
     return _getFilesForKey(failedStoreKey);
   }
 
-  Future<void> addFileToPending(String localPath) async{
+  Map<String, String> getMetadata() {
+    String? encodedResult = getString(metadataKey);
+    if (encodedResult != null) {
+      return jsonDecode(encodedResult);
+    }
+    return {};
+  }
+
+  Map<String, String> getHeaders() {
+    String? encodedResult = getString(headersKey);
+    if (encodedResult != null) {
+      return jsonDecode(encodedResult);
+    }
+    return {};
+  }
+
+  String? getCustomScheme() {
+    return getString(customSchemeKey);
+  }
+
+  Future<void> setHeadersMetadata({
+    Map<String, String>? headers,
+    Map<String, String>? metadata,
+  }) async {
+    if (metadata != null) {
+      await setString(metadataKey, jsonEncode(metadata));
+    }
+    if (headers != null) {
+      await setString(headersKey, jsonEncode(metadata));
+    }
+  }
+
+  Future<void> setCustomScheme(String? customScheme) async {
+    if (customScheme != null) {
+      await setString(customSchemeKey, customScheme);
+    }
+  }
+
+  Future<void> addFileToPending(String localPath) async {
     await removeFile(localPath, failedStoreKey);
     await _updateMapEntry(localPath, pendingStoreKey);
   }
 
-  Future<void> addFileToProcessing(String localPath, String uploadUrl) async{
+  Future<void> addFileToProcessing(String localPath, String uploadUrl) async {
     await removeFile(localPath, pendingStoreKey);
     await _updateMapEntry(localPath, processingStoreKey, uploadUrl);
   }
 
-  Future<void> addFileToComplete(String localPath) async{
+  Future<void> addFileToComplete(String localPath) async {
     await removeFile(localPath, processingStoreKey);
     await _updateMapEntry(localPath, completeStoreKey);
   }
 
-  Future<void> removeFile(String localPath, String storeKey) async{
+  Future<void> removeFile(String localPath, String storeKey) async {
     String? encodedResult = getString(storeKey);
     if (encodedResult != null) {
       final result = Map<String, String>.from(jsonDecode(encodedResult));
@@ -76,16 +117,14 @@ extension SharedPreferencesUtils on SharedPreferences {
     }
   }
 
-  Future<void> addFileToFailed(String localPath) async{
+  Future<void> addFileToFailed(String localPath) async {
     await removeFile(localPath, processingStoreKey);
     await _updateMapEntry(localPath, failedStoreKey);
   }
 
-  Future<void> removeFileFromFailed(String localPath) async{
+  Future<void> removeFileFromFailed(String localPath) async {
     return removeFile(localPath, failedStoreKey);
   }
-
-
 
   Future<void> resetUploading() async {
     await remove(completeStoreKey);
@@ -103,7 +142,7 @@ extension SharedPreferencesUtils on SharedPreferences {
     return result;
   }
 
-  Future<bool> _updateMapEntry(String key, String storeKey, [String value = '']) async{
+  Future<bool> _updateMapEntry(String key, String storeKey, [String value = '']) async {
     String? encodedResult = getString(storeKey);
     late Map<String, String> result;
     if (encodedResult == null) {

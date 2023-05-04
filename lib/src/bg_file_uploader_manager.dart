@@ -115,10 +115,17 @@ class TusBGFileUploaderManager {
     return failedUploads;
   }
 
-  Future<void> uploadFiles(List<String> localFilePathList) async {
+  Future<void> uploadFiles(
+    List<String> localFilePathList, {
+    String? customScheme,
+    Map<String, String>? headers,
+    Map<String, String>? metadata,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     await Future.wait(localFilePathList.map((path) => prefs.addFileToPending(path)));
+    await prefs.setHeadersMetadata(headers: headers, metadata: metadata);
+    await prefs.setCustomScheme(customScheme);
     final service = FlutterBackgroundService();
     final isRunning = await service.isRunning();
     if (!isRunning) {
@@ -178,7 +185,7 @@ class TusBGFileUploaderManager {
     final prefs = await SharedPreferences.getInstance();
     await prefs.addFileToComplete(filePath);
     await _updateProgress(currentFileProgress: 1);
-    service.invoke(_completionStream, {'filePath': filePath, 'url' : uploadUrl});
+    service.invoke(_completionStream, {'filePath': filePath, 'url': uploadUrl});
   }
 
   @pragma('vm:entry-point')
@@ -241,10 +248,11 @@ class TusBGFileUploaderManager {
   ]) async {
     await prefs.reload();
     final pendingUploads = _getPendingUploads(prefs, service);
+    final headers = prefs.getHeaders();
     final total = processingUploads.length + pendingUploads.length;
     if (total > 0) {
       final uploaderList = await Future.wait([...processingUploads, ...pendingUploads]);
-      await Future.wait(uploaderList.map((uploader) => uploader.upload()));
+      await Future.wait(uploaderList.map((uploader) => uploader.upload(headers: headers)));
       await _uploadFiles(prefs, service);
     }
   }
@@ -255,11 +263,15 @@ class TusBGFileUploaderManager {
     ServiceInstance service,
   ) {
     final uploadingFiles = prefs.getProcessingUploading();
+    final metadata = prefs.getMetadata();
+    final headers = prefs.getHeaders();
     return uploadingFiles.entries.where((e) => !cache.containsKey(e.key)).map((entry) async {
       final uploader = await _uploaderFromPath(
         service,
         entry.key,
-        entry.value,
+        uploadUrl: entry.value,
+        metadata: metadata,
+        headers: headers,
       );
       cache[entry.key] = uploader;
       return uploader;
@@ -272,10 +284,16 @@ class TusBGFileUploaderManager {
     ServiceInstance service,
   ) {
     final pendingFiles = prefs.getPendingUploading();
+    final customScheme = prefs.getCustomScheme();
+    final metadata = prefs.getMetadata();
+    final headers = prefs.getHeaders();
     return pendingFiles.entries.where((e) => !cache.containsKey(e.key)).map((entry) async {
       final uploader = await _uploaderFromPath(
         service,
         entry.key,
+        customScheme: customScheme,
+        metadata: metadata,
+        headers: headers,
       );
       cache[entry.key] = uploader;
       final uploadUrl = await uploader.setupUploadUrl();
@@ -291,13 +309,16 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static Future<TusFileUploader> _uploaderFromPath(
     ServiceInstance service,
-    String path, [
+    String path, {
     String? uploadUrl,
-  ]) async {
+    String? customScheme,
+    Map<String, String>? headers,
+    Map<String, String>? metadata,
+  }) async {
     final xFile = XFile(path);
     final totalBytes = await xFile.length();
-    final uploadMetadata = xFile.generateMetadata();
-    final resultHeaders = Map<String, String>.from({})
+    final uploadMetadata = xFile.generateMetadata(originalMetadata: metadata);
+    final resultHeaders = Map<String, String>.from(headers ?? {})
       ..addAll({
         "Tus-Resumable": tusVersion,
         "Upload-Metadata": uploadMetadata,
@@ -312,7 +333,7 @@ class TusBGFileUploaderManager {
     if (uploadUrl == null) {
       return TusFileUploader.init(
         path: path,
-        baseUrl: Uri.parse(baseUrl),
+        baseUrl: Uri.parse(baseUrl + (customScheme ?? '')),
         headers: resultHeaders,
         failOnLostConnection: failOnLostConnection,
         progressCallback: (filePath, progress) async => _onProgress(
