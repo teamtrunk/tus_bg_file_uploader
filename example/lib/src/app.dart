@@ -118,10 +118,13 @@ class _AppState extends State<App> {
 
   void uploadAll() async {
     await sharedPreferences.setStringList(
-        'files', (files..addAll(newFiles)).map((e) => jsonEncode(e)).toList());
-    uploadingManager.uploadFiles(newFiles.map((e) => e.path).toList());
+      'files',
+      (files..addAll(newFiles)).map((e) => jsonEncode(e)).toList(),
+    );
+    uploadingManager.uploadFiles(
+      newFiles.map((e) => e.path).toList(),
+    );
     setState(() => newFiles.clear());
-
   }
 
   Future<void> clearUploads() async {
