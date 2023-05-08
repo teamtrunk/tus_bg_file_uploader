@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -262,10 +263,28 @@ class TusBGFileUploaderManager {
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
-    final uploadingFiles = prefs.getProcessingUploading();
+    final allUploadingFiles = prefs.getProcessingUploading();
+    final filesToUpload = <String>[];
+    final filesToRemove = <String>[];
+    for (var key in allUploadingFiles.keys) {
+      final file = File(key);
+      if (file.existsSync()) {
+        filesToUpload.add(key);
+      } else {
+        filesToRemove.add(key);
+      }
+    }
+    for (var path in filesToRemove) {
+      final url = allUploadingFiles[path];
+      if (url != null) {
+        prefs.removeFile(path, url);
+      }
+    }
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return uploadingFiles.entries.where((e) => !cache.containsKey(e.key)).map((entry) async {
+    return allUploadingFiles.entries
+        .where((e) => !cache.containsKey(e.key) && filesToUpload.contains(e.key))
+        .map((entry) async {
       final uploader = await _uploaderFromPath(
         service,
         entry.key,
