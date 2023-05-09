@@ -302,11 +302,29 @@ class TusBGFileUploaderManager {
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
-    final pendingFiles = prefs.getPendingUploading();
+    final allPendingFiles = prefs.getPendingUploading();
+    final filesToUpload = <String>[];
+    final filesToRemove = <String>[];
+    for (var key in allPendingFiles.keys) {
+      final file = File(key);
+      if (file.existsSync()) {
+        filesToUpload.add(key);
+      } else {
+        filesToRemove.add(key);
+      }
+    }
+    for (var path in filesToRemove) {
+      final url = allPendingFiles[path];
+      if (url != null) {
+        prefs.removeFile(path, url);
+      }
+    }
     final customScheme = prefs.getCustomScheme();
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return pendingFiles.entries.where((e) => !cache.containsKey(e.key)).map((entry) async {
+    return allPendingFiles.entries
+        .where((e) => !cache.containsKey(e.key) && filesToUpload.contains(e.key))
+        .map((entry) async {
       final uploader = await _uploaderFromPath(
         service,
         entry.key,

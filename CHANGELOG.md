@@ -1,3 +1,7 @@
+## 0.0.6
+
+Implemented clearing processing files that don't exist
+
 ## 0.0.5
 
 Implemented clearing pending files that don't exist
