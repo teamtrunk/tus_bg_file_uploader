@@ -1,3 +1,7 @@
+## 0.0.7
+
+Added ability to change the timeout
+
 ## 0.0.6
 
 Implemented clearing processing files that don't exist

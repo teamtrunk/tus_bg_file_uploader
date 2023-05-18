@@ -78,11 +78,13 @@ class TusBGFileUploaderManager {
 
   Future<void> setup(
     String baseUrl, {
+    int? timeout,
     bool failOnLostConnection = false,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     prefs.setBaseUrl(baseUrl);
     prefs.setFailOnLostConnection(failOnLostConnection);
+    prefs.setTimeout(timeout);
     final service = FlutterBackgroundService();
     await service.configure(
       androidConfiguration: AndroidConfiguration(
@@ -363,6 +365,7 @@ class TusBGFileUploaderManager {
       });
     final prefs = await SharedPreferences.getInstance();
     final baseUrl = prefs.getBaseUrl();
+    final timeout = prefs.getTimeout();
     if (baseUrl == null) {
       throw Exception('baseUrl is required');
     }
@@ -370,6 +373,7 @@ class TusBGFileUploaderManager {
     if (uploadUrl == null) {
       return TusFileUploader.init(
         path: path,
+        timeout: timeout,
         baseUrl: Uri.parse(baseUrl + (customScheme ?? '')),
         headers: resultHeaders,
         failOnLostConnection: failOnLostConnection,
@@ -391,6 +395,7 @@ class TusBGFileUploaderManager {
     } else {
       return TusFileUploader.initAndSetup(
         path: path,
+        timeout: timeout,
         baseUrl: Uri.parse(baseUrl),
         uploadUrl: Uri.parse(uploadUrl),
         failOnLostConnection: failOnLostConnection,

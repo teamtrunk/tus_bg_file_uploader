@@ -12,6 +12,7 @@ const appIconStoreKey = 'app_icon';
 const customSchemeKey = 'custom_scheme';
 const metadataKey = 'metadata';
 const headersKey = 'headers';
+const timeoutKey = 'timeout';
 
 extension SharedPreferencesUtils on SharedPreferences {
   // PUBLIC ----------------------------------------------------------------------------------------
@@ -58,7 +59,7 @@ extension SharedPreferencesUtils on SharedPreferences {
   Map<String, String> getMetadata() {
     String? encodedResult = getString(metadataKey);
     if (encodedResult != null) {
-      return Map.castFrom<String,dynamic, String, String>(jsonDecode(encodedResult));
+      return Map.castFrom<String, dynamic, String, String>(jsonDecode(encodedResult));
     }
     return {};
   }
@@ -66,13 +67,17 @@ extension SharedPreferencesUtils on SharedPreferences {
   Map<String, String> getHeaders() {
     String? encodedResult = getString(headersKey);
     if (encodedResult != null) {
-      return Map.castFrom<String,dynamic, String, String>(jsonDecode(encodedResult));
+      return Map.castFrom<String, dynamic, String, String>(jsonDecode(encodedResult));
     }
     return {};
   }
 
   String? getCustomScheme() {
     return getString(customSchemeKey);
+  }
+
+  int? getTimeout() {
+    return getInt(timeoutKey);
   }
 
   Future<void> setHeadersMetadata({
@@ -90,6 +95,12 @@ extension SharedPreferencesUtils on SharedPreferences {
   Future<void> setCustomScheme(String? customScheme) async {
     if (customScheme != null) {
       await setString(customSchemeKey, customScheme);
+    }
+  }
+
+  Future<void> setTimeout(int? timeout) async {
+    if (timeout != null) {
+      await setInt(timeoutKey, timeout);
     }
   }
 

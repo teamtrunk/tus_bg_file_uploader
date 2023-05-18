@@ -55,7 +55,12 @@ class _AppState extends State<App> {
     subscribeFileCompletion();
     subscribeConnectionState();
     subscribeFailure();
-    uploadingManager.setup('https://master.tus.io/files/').whenComplete(() => resumeAll());
+    uploadingManager
+        .setup(
+          'https://master.tus.io/files/',
+          timeout: 10,
+        )
+        .whenComplete(() => resumeAll());
   }
 
   @override
@@ -123,6 +128,10 @@ class _AppState extends State<App> {
     );
     uploadingManager.uploadFiles(
       newFiles.map((e) => e.path).toList(),
+      metadata: {
+        'notes': 'Test notes',
+        'tags': 'receipt;critical',
+      },
     );
     setState(() => newFiles.clear());
   }
