@@ -1,3 +1,7 @@
+## 0.0.8
+
+Updated flutter_local_notifications to the latest version
+
 ## 0.0.7
 
 Added ability to change the timeout
