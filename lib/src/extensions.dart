@@ -111,6 +111,7 @@ extension SharedPreferencesUtils on SharedPreferences {
 
   Future<void> addFileToProcessing(String localPath, String uploadUrl) async {
     await removeFile(localPath, pendingStoreKey);
+    await removeFile(localPath, failedStoreKey);
     await _updateMapEntry(localPath, processingStoreKey, uploadUrl);
   }
 
