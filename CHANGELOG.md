@@ -1,3 +1,7 @@
+## 0.0.9
+
+Merged latest pull requests
+
 ## 0.0.8
 
 Updated flutter_local_notifications to the latest version
