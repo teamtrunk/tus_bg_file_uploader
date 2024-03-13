@@ -108,8 +108,11 @@ class TusBGFileUploaderManager {
     final prefs = await SharedPreferences.getInstance();
     final pendingUploads = prefs.getPendingUploading();
     final processingUploads = prefs.getProcessingUploading();
+    final failedUploads = prefs.getFailedUploading();
 
-    return pendingUploads..addAll(processingUploads);
+    return pendingUploads
+      ..addAll(processingUploads)
+      ..addAll(failedUploads);
   }
 
   Future<Map<String, String>> checkForFailedUploads() async {
@@ -251,10 +254,15 @@ class TusBGFileUploaderManager {
   ]) async {
     await prefs.reload();
     final pendingUploads = _getPendingUploads(prefs, service);
+    final failedUploads = _getFailedUploads(prefs, service);
     final headers = prefs.getHeaders();
-    final total = processingUploads.length + pendingUploads.length;
+    final total = processingUploads.length + pendingUploads.length + failedUploads.length;
     if (total > 0) {
-      final uploaderList = await Future.wait([...processingUploads, ...pendingUploads]);
+      final uploaderList = await Future.wait([
+        ...processingUploads,
+        ...pendingUploads,
+        ...failedUploads,
+      ]);
       await Future.wait(uploaderList.map((uploader) => uploader.upload(headers: headers)));
       await _uploadFiles(prefs, service);
     }
@@ -277,10 +285,7 @@ class TusBGFileUploaderManager {
       }
     }
     for (var path in filesToRemove) {
-      final url = allUploadingFiles[path];
-      if (url != null) {
-        prefs.removeFile(path, url);
-      }
+      prefs.removeFile(path, processingStoreKey);
     }
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
@@ -316,15 +321,55 @@ class TusBGFileUploaderManager {
       }
     }
     for (var path in filesToRemove) {
-      final url = allPendingFiles[path];
-      if (url != null) {
-        prefs.removeFile(path, url);
-      }
+      prefs.removeFile(path, pendingStoreKey);
     }
     final customScheme = prefs.getCustomScheme();
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
     return allPendingFiles.entries
+        .where((e) => !cache.containsKey(e.key) && filesToUpload.contains(e.key))
+        .map((entry) async {
+      final uploader = await _uploaderFromPath(
+        service,
+        entry.key,
+        customScheme: customScheme,
+        metadata: metadata,
+        headers: headers,
+      );
+      cache[entry.key] = uploader;
+      final uploadUrl = await uploader.setupUploadUrl();
+      if (uploadUrl != null) {
+        prefs.addFileToProcessing(entry.key, uploadUrl);
+      } else {
+        prefs.removeFile(entry.key, processingStoreKey);
+      }
+      return uploader;
+    });
+  }
+
+  @pragma('vm:entry-point')
+  static Iterable<Future<TusFileUploader>> _getFailedUploads(
+    SharedPreferences prefs,
+    ServiceInstance service,
+  ) {
+    final allFailedFiles = prefs.getFailedUploading();
+    final filesToUpload = <String>[];
+    final filesToRemove = <String>[];
+    for (var key in allFailedFiles.keys) {
+      final file = File(key);
+      if (file.existsSync()) {
+        filesToUpload.add(key);
+      } else {
+        filesToRemove.add(key);
+      }
+    }
+    for (var path in filesToRemove) {
+      prefs.removeFile(path, failedStoreKey);
+    }
+    final customScheme = prefs.getCustomScheme();
+    final metadata = prefs.getMetadata();
+    final headers = prefs.getHeaders();
+    return allFailedFiles.entries
         .where((e) => !cache.containsKey(e.key) && filesToUpload.contains(e.key))
         .map((entry) async {
       final uploader = await _uploaderFromPath(
