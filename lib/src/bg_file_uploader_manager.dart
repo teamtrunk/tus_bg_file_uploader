@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart';
+import 'package:flutter_background_service_android/flutter_background_service_android.dart' as bsa;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_file_uploader/tus_file_uploader.dart';
@@ -154,7 +154,7 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static _onStart(ServiceInstance service) async {
     DartPluginRegistrant.ensureInitialized();
-    if (service is AndroidServiceInstance) {
+    if (service is bsa.AndroidServiceInstance) {
       service.setAsForegroundService();
     }
     service.on('stopService').listen((_) => _dispose(service));
