@@ -1,3 +1,7 @@
+## 0.0.10
+
+Implemented handling 401 error. Added logging
+
 ## 0.0.9
 
 Merged latest pull requests

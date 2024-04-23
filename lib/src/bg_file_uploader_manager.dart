@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart' as bsa;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_file_uploader/tus_file_uploader.dart';
 import 'package:cross_file/cross_file.dart' show XFile;
@@ -16,6 +17,7 @@ import 'extensions.dart';
 const _progressStream = 'progress_stream';
 const _completionStream = 'completion_stream';
 const _failureStream = 'failure_stream';
+const _authStream = 'auth_stream';
 
 @pragma('vm:entry-point')
 enum _NotificationIds {
@@ -56,6 +58,10 @@ class TusBGFileUploaderManager {
   static final _instance = TusBGFileUploaderManager._();
   @pragma('vm:entry-point')
   static final cache = <String, TusFileUploader>{};
+  @pragma('vm:entry-point')
+  static late Logger _logger;
+  @pragma('vm:entry-point')
+  static late Level _loggerLevel;
 
   @pragma('vm:entry-point')
   TusBGFileUploaderManager._();
@@ -79,8 +85,11 @@ class TusBGFileUploaderManager {
   Future<void> setup(
     String baseUrl, {
     int? timeout,
+    Level loggerLevel = Level.off,
     bool failOnLostConnection = false,
   }) async {
+    _loggerLevel = loggerLevel;
+    _logger = Logger(level: _loggerLevel);
     final prefs = await SharedPreferences.getInstance();
     prefs.setBaseUrl(baseUrl);
     prefs.setFailOnLostConnection(failOnLostConnection);
@@ -141,6 +150,9 @@ class TusBGFileUploaderManager {
 
   void resumeAllUploading() async {
     final unfinishedFiles = await checkForUnfinishedUploads();
+    _logger.d(
+      "RESUME UPLOADING\n=> Unfinished files: ${unfinishedFiles.length}",
+    );
     if (unfinishedFiles.isEmpty) return;
 
     final service = FlutterBackgroundService();
@@ -245,6 +257,16 @@ class TusBGFileUploaderManager {
     service.invoke(_failureStream, {'filePath': filePath});
   }
 
+  @pragma('vm:entry-point')
+  static Future<void> _onAuthFailed({
+    required String filePath,
+    required ServiceInstance service,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.addFileToFailed(filePath);
+    service.invoke(_authStream, {'filePath': filePath});
+  }
+
   // PRIVATE ---------------------------------------------------------------------------------------
   @pragma('vm:entry-point')
   static Future<void> _uploadFiles(
@@ -257,6 +279,9 @@ class TusBGFileUploaderManager {
     final failedUploads = _getFailedUploads(prefs, service);
     final headers = prefs.getHeaders();
     final total = processingUploads.length + pendingUploads.length + failedUploads.length;
+    _logger.d(
+      "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Pending files: ${pendingUploads.length}\n=> Failed files: ${failedUploads.length}",
+    );
     if (total > 0) {
       final uploaderList = await Future.wait([
         ...processingUploads,
@@ -422,6 +447,7 @@ class TusBGFileUploaderManager {
         baseUrl: Uri.parse(baseUrl + (customScheme ?? '')),
         headers: resultHeaders,
         failOnLostConnection: failOnLostConnection,
+        loggerLevel: _loggerLevel,
         progressCallback: (filePath, progress) async => _onProgress(
           localPath: filePath,
           progress: progress,
@@ -433,6 +459,10 @@ class TusBGFileUploaderManager {
           uploadUrl: uploadUrl,
         ),
         failureCallback: (filePath, _) async => _onNextFileFailed(
+          filePath: filePath,
+          service: service,
+        ),
+        authCallback: (filePath, _) async => _onAuthFailed(
           filePath: filePath,
           service: service,
         ),
@@ -445,6 +475,7 @@ class TusBGFileUploaderManager {
         uploadUrl: Uri.parse(uploadUrl),
         failOnLostConnection: failOnLostConnection,
         headers: resultHeaders,
+        loggerLevel: _loggerLevel,
         progressCallback: (filePath, progress) async => _onProgress(
           localPath: filePath,
           progress: progress,
@@ -456,6 +487,10 @@ class TusBGFileUploaderManager {
           uploadUrl: uploadUrl,
         ),
         failureCallback: (filePath, _) async => _onNextFileFailed(
+          filePath: filePath,
+          service: service,
+        ),
+        authCallback: (filePath, _) async => _onAuthFailed(
           filePath: filePath,
           service: service,
         ),
