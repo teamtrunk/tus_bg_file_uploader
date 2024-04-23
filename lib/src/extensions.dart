@@ -13,6 +13,7 @@ const customSchemeKey = 'custom_scheme';
 const metadataKey = 'metadata';
 const headersKey = 'headers';
 const timeoutKey = 'timeout';
+const loggerLevel = "logger_level";
 
 extension SharedPreferencesUtils on SharedPreferences {
   // PUBLIC ----------------------------------------------------------------------------------------
@@ -78,6 +79,14 @@ extension SharedPreferencesUtils on SharedPreferences {
 
   int? getTimeout() {
     return getInt(timeoutKey);
+  }
+
+  int getLoggerLevel() {
+    return getInt(loggerLevel) ?? 0;
+  }
+
+  Future<void> setLoggerLevel(int level) async {
+    await setInt(loggerLevel, level);
   }
 
   Future<void> setHeadersMetadata({

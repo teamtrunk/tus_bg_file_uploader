@@ -57,11 +57,9 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static final _instance = TusBGFileUploaderManager._();
   @pragma('vm:entry-point')
+  static final _objectsCache = <String, dynamic>{};
+  @pragma('vm:entry-point')
   static final cache = <String, TusFileUploader>{};
-  @pragma('vm:entry-point')
-  static late Logger _logger;
-  @pragma('vm:entry-point')
-  static late Level _loggerLevel;
 
   @pragma('vm:entry-point')
   TusBGFileUploaderManager._();
@@ -92,12 +90,11 @@ class TusBGFileUploaderManager {
     Level loggerLevel = Level.off,
     bool failOnLostConnection = false,
   }) async {
-    _loggerLevel = loggerLevel;
-    _logger = Logger(level: _loggerLevel);
     final prefs = await SharedPreferences.getInstance();
     prefs.setBaseUrl(baseUrl);
     prefs.setFailOnLostConnection(failOnLostConnection);
     prefs.setTimeout(timeout);
+    prefs.setLoggerLevel(loggerLevel.value);
     final service = FlutterBackgroundService();
     await service.configure(
       androidConfiguration: AndroidConfiguration(
@@ -154,7 +151,8 @@ class TusBGFileUploaderManager {
 
   void resumeAllUploading() async {
     final unfinishedFiles = await checkForUnfinishedUploads();
-    _logger.d(
+    final prefs = await SharedPreferences.getInstance();
+    buildLogger(prefs).d(
       "RESUME UPLOADING\n=> Unfinished files: ${unfinishedFiles.length}",
     );
     if (unfinishedFiles.isEmpty) return;
@@ -283,7 +281,7 @@ class TusBGFileUploaderManager {
     final failedUploads = _getFailedUploads(prefs, service);
     final headers = prefs.getHeaders();
     final total = processingUploads.length + pendingUploads.length + failedUploads.length;
-    _logger.d(
+    buildLogger(prefs).d(
       "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Pending files: ${pendingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
@@ -444,6 +442,7 @@ class TusBGFileUploaderManager {
       throw Exception('baseUrl is required');
     }
     final failOnLostConnection = prefs.getFailOnLostConnection();
+    final loggerLevel = _objectsCache["logger_level"] ?? Level.off;
     if (uploadUrl == null) {
       return TusFileUploader.init(
         path: path,
@@ -451,7 +450,7 @@ class TusBGFileUploaderManager {
         baseUrl: Uri.parse(baseUrl + (customScheme ?? '')),
         headers: resultHeaders,
         failOnLostConnection: failOnLostConnection,
-        loggerLevel: _loggerLevel,
+        loggerLevel: loggerLevel,
         progressCallback: (filePath, progress) async => _onProgress(
           localPath: filePath,
           progress: progress,
@@ -479,7 +478,7 @@ class TusBGFileUploaderManager {
         uploadUrl: Uri.parse(uploadUrl),
         failOnLostConnection: failOnLostConnection,
         headers: resultHeaders,
-        loggerLevel: _loggerLevel,
+        loggerLevel: loggerLevel,
         progressCallback: (filePath, progress) async => _onProgress(
           localPath: filePath,
           progress: progress,
@@ -500,6 +499,38 @@ class TusBGFileUploaderManager {
         ),
       );
     }
+  }
+
+  @pragma('vm:entry-point')
+  static Logger buildLogger(SharedPreferences prefs) {
+    var logger = _objectsCache["logger"];
+    if (logger == null) {
+      final loggerLevel = prefs.getLoggerLevel();
+      final Level level;
+      switch (loggerLevel) {
+        case 0:
+          level = Level.all;
+          break;
+        case 2000:
+          level = Level.debug;
+          break;
+        case 5000:
+          level = Level.error;
+          break;
+        default:
+          level = Level.off;
+          break;
+      }
+      logger = Logger(
+        level: level,
+        printer: PrettyPrinter(
+          methodCount: 0,
+        ),
+      );
+      _objectsCache["logger"] = logger;
+      _objectsCache["logger_level"] = level;
+    }
+    return logger!;
   }
 
   @pragma('vm:entry-point')

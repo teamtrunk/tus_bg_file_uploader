@@ -1,3 +1,11 @@
+## 0.0.13
+
+Updated tus_file_uploader
+
+## 0.0.12
+
+Fixed logging
+
 ## 0.0.11
 
 Fixed handling 401 error
