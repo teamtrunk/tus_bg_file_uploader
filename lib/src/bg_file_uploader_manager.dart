@@ -17,7 +17,7 @@ import 'extensions.dart';
 const _progressStream = 'progress_stream';
 const _completionStream = 'completion_stream';
 const _failureStream = 'failure_stream';
-const _authStream = 'auth_stream';
+const _authFailureStream = 'auth_stream';
 
 @pragma('vm:entry-point')
 enum _NotificationIds {
@@ -80,6 +80,10 @@ class TusBGFileUploaderManager {
 
   Stream<Map<String, dynamic>?> get failureStream => FlutterBackgroundService().on(
         _failureStream,
+      );
+
+  Stream<Map<String, dynamic>?> get authFailureStream => FlutterBackgroundService().on(
+        _authFailureStream,
       );
 
   Future<void> setup(
@@ -264,7 +268,7 @@ class TusBGFileUploaderManager {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.addFileToFailed(filePath);
-    service.invoke(_authStream, {'filePath': filePath});
+    service.invoke(_authFailureStream, {'filePath': filePath});
   }
 
   // PRIVATE ---------------------------------------------------------------------------------------

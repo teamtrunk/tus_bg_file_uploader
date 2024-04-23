@@ -1,3 +1,7 @@
+## 0.0.11
+
+Fixed handling 401 error
+
 ## 0.0.10
 
 Implemented handling 401 error. Added logging
