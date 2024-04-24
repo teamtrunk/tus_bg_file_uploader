@@ -35,18 +35,19 @@ class _AppState extends State<App> {
       final filesJson = sharedPreferences.getStringList('files');
       if (filesJson != null) {
         files = filesJson.map((e) => FileModel.fromJson(jsonDecode(e))).toSet();
-        final unfinishedFiles = await uploadingManager.checkForUnfinishedUploads();
-        final failedFiles = await uploadingManager.checkForFailedUploads();
-        for (final failedFilesPath in failedFiles.keys) {
-          final file = files.firstWhere((element) => element.path == failedFilesPath);
+        final unfinishedModels = await uploadingManager.checkForUnfinishedUploads();
+        final failedModels = await uploadingManager.checkForFailedUploads();
+        for (final model in failedModels) {
+          final file = files.firstWhere((element) => element.path == model.path);
           file.failed = true;
         }
 
-        files.forEach((file) {
-          if (!unfinishedFiles.keys.contains(file.path) && !failedFiles.keys.contains(file.path)) {
+        for (var file in files) {
+          if (!unfinishedModels.any((e) => e.path == file.path) &&
+              !failedModels.any((e) => e.path == file.path)) {
             file.progress = 1;
           }
-        });
+        }
 
         setState(() {});
       }
@@ -127,7 +128,11 @@ class _AppState extends State<App> {
       (files..addAll(newFiles)).map((e) => jsonEncode(e)).toList(),
     );
     uploadingManager.uploadFiles(
-      newFiles.map((e) => e.path).toList(),
+      uploadingModels: newFiles
+          .map(
+            (e) => UploadingModel(path: e.path),
+          )
+          .toList(),
       metadata: {
         'notes': 'Test notes',
         'tags': 'receipt;critical',
@@ -213,7 +218,7 @@ class _AppState extends State<App> {
       file.failed = false;
     });
     sharedPreferences.setStringList('files', files.map((e) => jsonEncode(e)).toList());
-    uploadingManager.uploadFiles([filePath]);
+    uploadingManager.uploadFiles(uploadingModels: [UploadingModel(path: filePath)]);
   }
 
   void resumeAll() {

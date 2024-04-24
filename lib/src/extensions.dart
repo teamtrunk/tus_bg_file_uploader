@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tus_file_uploader/tus_file_uploader.dart';
+import 'package:synchronized/synchronized.dart';
 
 const pendingStoreKey = 'pending_uploading';
 const processingStoreKey = 'processing_uploading';
@@ -16,13 +18,24 @@ const timeoutKey = 'timeout';
 const loggerLevel = "logger_level";
 
 extension SharedPreferencesUtils on SharedPreferences {
+  static final lock = Lock();
+
   // PUBLIC ----------------------------------------------------------------------------------------
+  Future<void> init() async {
+    return lock.synchronized(() async {
+      await remove(pendingStoreKey);
+      await remove(processingStoreKey);
+      await remove(completeStoreKey);
+      await remove(failedStoreKey);
+    });
+  }
+
   String? getBaseUrl() {
     return getString(baseUrlStoreKey);
   }
 
   Future<bool> setBaseUrl(String value) async {
-    return setString(baseUrlStoreKey, value);
+    return lock.synchronized(() => setString(baseUrlStoreKey, value));
   }
 
   bool getFailOnLostConnection() {
@@ -30,7 +43,7 @@ extension SharedPreferencesUtils on SharedPreferences {
   }
 
   Future<bool> setFailOnLostConnection(bool value) async {
-    return setBool(failOnLostConnectionStoreKey, value);
+    return lock.synchronized(() => setBool(failOnLostConnectionStoreKey, value));
   }
 
   String? getAppIcon() {
@@ -38,23 +51,23 @@ extension SharedPreferencesUtils on SharedPreferences {
   }
 
   Future<bool> setAppIcon(String value) async {
-    return setString(appIconStoreKey, value);
+    return lock.synchronized(() => setString(appIconStoreKey, value));
   }
 
-  Map<String, String> getPendingUploading() {
-    return _getFilesForKey(pendingStoreKey);
+  List<UploadingModel> getPendingUploading() {
+    return _getFilesForKey(pendingStoreKey).toList();
   }
 
-  Map<String, String> getProcessingUploading() {
-    return _getFilesForKey(processingStoreKey);
+  List<UploadingModel> getProcessingUploading() {
+    return _getFilesForKey(processingStoreKey).toList();
   }
 
-  Map<String, String> getCompleteUploading() {
-    return _getFilesForKey(completeStoreKey);
+  List<UploadingModel> getCompleteUploading() {
+    return _getFilesForKey(completeStoreKey).toList();
   }
 
-  Map<String, String> getFailedUploading() {
-    return _getFilesForKey(failedStoreKey);
+  List<UploadingModel> getFailedUploading() {
+    return _getFilesForKey(failedStoreKey).toList();
   }
 
   Map<String, String> getMetadata() {
@@ -73,10 +86,6 @@ extension SharedPreferencesUtils on SharedPreferences {
     return {};
   }
 
-  String? getCustomScheme() {
-    return getString(customSchemeKey);
-  }
-
   int? getTimeout() {
     return getInt(timeoutKey);
   }
@@ -85,93 +94,103 @@ extension SharedPreferencesUtils on SharedPreferences {
     return getInt(loggerLevel) ?? 0;
   }
 
-  Future<void> setLoggerLevel(int level) async {
-    await setInt(loggerLevel, level);
+  Future<bool> setLoggerLevel(int level) async {
+    return lock.synchronized(() => setInt(loggerLevel, level));
   }
 
   Future<void> setHeadersMetadata({
     Map<String, String>? headers,
     Map<String, String>? metadata,
   }) async {
-    if (metadata != null) {
-      await setString(metadataKey, jsonEncode(metadata));
-    }
-    if (headers != null) {
-      await setString(headersKey, jsonEncode(headers));
-    }
+    await lock.synchronized(() async {
+      if (metadata != null) {
+        await setString(metadataKey, jsonEncode(metadata));
+      }
+      if (headers != null) {
+        await setString(headersKey, jsonEncode(headers));
+      }
+    });
   }
 
-  Future<void> setCustomScheme(String? customScheme) async {
-    if (customScheme != null) {
-      await setString(customSchemeKey, customScheme);
-    }
+  Future<bool> setTimeout(int? timeout) async {
+    return lock.synchronized(() {
+      if (timeout != null) {
+        return setInt(timeoutKey, timeout);
+      } else {
+        return false;
+      }
+    });
   }
 
-  Future<void> setTimeout(int? timeout) async {
-    if (timeout != null) {
-      await setInt(timeoutKey, timeout);
-    }
+  Future<void> addFileToPending({required UploadingModel uploadingModel}) async {
+    final processingFiles = getProcessingUploading();
+
+    if (processingFiles.contains(uploadingModel)) return;
+
+    await removeFile(uploadingModel, failedStoreKey);
+    await _updateMapEntry(uploadingModel, pendingStoreKey);
   }
 
-  Future<void> addFileToPending(String localPath) async {
-    await removeFile(localPath, failedStoreKey);
-    await _updateMapEntry(localPath, pendingStoreKey);
+  Future<void> addFileToProcessing({required UploadingModel uploadingModel}) async {
+    await removeFile(uploadingModel, pendingStoreKey);
+    await removeFile(uploadingModel, failedStoreKey);
+    await removeFile(uploadingModel, completeStoreKey);
+    await _updateMapEntry(uploadingModel, processingStoreKey);
   }
 
-  Future<void> addFileToProcessing(String localPath, String uploadUrl) async {
-    await removeFile(localPath, pendingStoreKey);
-    await removeFile(localPath, failedStoreKey);
-    await _updateMapEntry(localPath, processingStoreKey, uploadUrl);
+  Future<void> addFileToComplete({required UploadingModel uploadingModel}) async {
+    await removeFile(uploadingModel, pendingStoreKey);
+    await removeFile(uploadingModel, processingStoreKey);
+    await removeFile(uploadingModel, failedStoreKey);
+    await _updateMapEntry(uploadingModel, completeStoreKey);
   }
 
-  Future<void> addFileToComplete(String localPath) async {
-    await removeFile(localPath, processingStoreKey);
-    await _updateMapEntry(localPath, completeStoreKey);
+  Future<bool> removeFile(UploadingModel uploadingModel, String storeKey) async {
+    return lock.synchronized(() {
+      final encodedResult = getStringList(storeKey);
+      if (encodedResult != null) {
+        final result = encodedResult.map((e) => UploadingModel.fromJson(jsonDecode(e))).toList();
+        result.remove(uploadingModel);
+        return setStringList(storeKey, result.map((e) => jsonEncode(e.toJson())).toList());
+      } else {
+        return false;
+      }
+    });
   }
 
-  Future<void> removeFile(String localPath, String storeKey) async {
-    String? encodedResult = getString(storeKey);
-    if (encodedResult != null) {
-      final result = Map<String, String>.from(jsonDecode(encodedResult));
-      result.remove(localPath);
-      await setString(storeKey, jsonEncode(result));
-    }
+  Future<void> addFileToFailed({required UploadingModel uploadingModel}) async {
+    await removeFile(uploadingModel, pendingStoreKey);
+    await removeFile(uploadingModel, processingStoreKey);
+    await removeFile(uploadingModel, completeStoreKey);
+    await _updateMapEntry(uploadingModel, failedStoreKey);
   }
 
-  Future<void> addFileToFailed(String localPath) async {
-    await removeFile(localPath, processingStoreKey);
-    await _updateMapEntry(localPath, failedStoreKey);
-  }
-
-  Future<void> removeFileFromFailed(String localPath) async {
-    return removeFile(localPath, failedStoreKey);
-  }
-
-  Future<void> resetUploading() async {
-    await remove(completeStoreKey);
+  Future<bool> resetUploading() async {
+    return lock.synchronized(() async {
+      return remove(completeStoreKey);
+    });
   }
 
   // PRIVATE ---------------------------------------------------------------------------------------
-  Map<String, String> _getFilesForKey(String key) {
-    String? encodedResult = getString(key);
-    late Map<String, String> result;
+  Set<UploadingModel> _getFilesForKey(String storeKey) {
+    final encodedResult = getStringList(storeKey);
+    final Set<UploadingModel> result;
     if (encodedResult == null) {
       result = {};
     } else {
-      result = Map<String, String>.from(jsonDecode(encodedResult));
+      result = encodedResult.map((e) => UploadingModel.fromJson(jsonDecode(e))).toSet();
     }
+
     return result;
   }
 
-  Future<bool> _updateMapEntry(String key, String storeKey, [String value = '']) async {
-    String? encodedResult = getString(storeKey);
-    late Map<String, String> result;
-    if (encodedResult == null) {
-      result = {};
-    } else {
-      result = Map<String, String>.from(jsonDecode(encodedResult));
-    }
-    result[key] = value;
-    return setString(storeKey, jsonEncode(result));
+  Future<bool> _updateMapEntry(UploadingModel uploadingModel, String storeKey) async {
+    return lock.synchronized(() async {
+      final result = _getFilesForKey(storeKey);
+      result.remove(uploadingModel);
+      result.add(uploadingModel);
+
+      return setStringList(storeKey, result.map((e) => jsonEncode(e.toJson())).toList());
+    });
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -59,7 +58,7 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static final _objectsCache = <String, dynamic>{};
   @pragma('vm:entry-point')
-  static final cache = <String, TusFileUploader>{};
+  static final cache = <int, TusFileUploader>{};
 
   @pragma('vm:entry-point')
   TusBGFileUploaderManager._();
@@ -91,6 +90,7 @@ class TusBGFileUploaderManager {
     bool failOnLostConnection = false,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    prefs.init();
     prefs.setBaseUrl(baseUrl);
     prefs.setFailOnLostConnection(failOnLostConnection);
     prefs.setTimeout(timeout);
@@ -114,7 +114,7 @@ class TusBGFileUploaderManager {
     );
   }
 
-  Future<Map<String, String>> checkForUnfinishedUploads() async {
+  Future<List<UploadingModel>> checkForUnfinishedUploads() async {
     final prefs = await SharedPreferences.getInstance();
     final pendingUploads = prefs.getPendingUploading();
     final processingUploads = prefs.getProcessingUploading();
@@ -125,23 +125,25 @@ class TusBGFileUploaderManager {
       ..addAll(failedUploads);
   }
 
-  Future<Map<String, String>> checkForFailedUploads() async {
+  Future<List<UploadingModel>> checkForFailedUploads() async {
     final prefs = await SharedPreferences.getInstance();
     final failedUploads = prefs.getFailedUploading();
     return failedUploads;
   }
 
-  Future<void> uploadFiles(
-    List<String> localFilePathList, {
-    String? customScheme,
+  Future<void> uploadFiles({
+    required List<UploadingModel> uploadingModels,
     Map<String, String>? headers,
     Map<String, String>? metadata,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    await Future.wait(localFilePathList.map((path) => prefs.addFileToPending(path)));
+
+    for(final model in uploadingModels){
+      await prefs.addFileToPending(uploadingModel: model);
+    }
+
     await prefs.setHeadersMetadata(headers: headers, metadata: metadata);
-    await prefs.setCustomScheme(customScheme);
     final service = FlutterBackgroundService();
     final isRunning = await service.isRunning();
     if (!isRunning) {
@@ -190,7 +192,8 @@ class TusBGFileUploaderManager {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     final processingUploads = _getProcessingUploads(prefs, service);
-    await _uploadFiles(prefs, service, processingUploads);
+    final failedUploads = _getFailedUploads(prefs, service);
+    await _uploadFiles(prefs, service, processingUploads, failedUploads);
     await prefs.reload();
     await prefs.resetUploading();
     _dispose(service);
@@ -199,23 +202,23 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static Future<void> _onNextFileComplete({
     required ServiceInstance service,
-    required String filePath,
+    required UploadingModel uploadingModel,
     required String uploadUrl,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.addFileToComplete(filePath);
+    await prefs.addFileToComplete(uploadingModel: uploadingModel);
     await _updateProgress(currentFileProgress: 1);
-    service.invoke(_completionStream, {'filePath': filePath, 'url': uploadUrl});
+    service.invoke(_completionStream, {'id': uploadingModel.id, 'url': uploadUrl});
   }
 
   @pragma('vm:entry-point')
   static Future<void> _onProgress({
-    required String localPath,
+    required UploadingModel uploadingModel,
     required double progress,
     required ServiceInstance service,
   }) async {
     service.invoke(_progressStream, {
-      "filePath": localPath,
+      "id": uploadingModel.id,
       "progress": (progress * 100).toInt(),
     });
     await _updateProgress(currentFileProgress: progress);
@@ -251,22 +254,22 @@ class TusBGFileUploaderManager {
 
   @pragma('vm:entry-point')
   static Future<void> _onNextFileFailed({
-    required String filePath,
+    required UploadingModel uploadingModel,
     required ServiceInstance service,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.addFileToFailed(filePath);
-    service.invoke(_failureStream, {'filePath': filePath});
+    await prefs.addFileToFailed(uploadingModel: uploadingModel);
+    service.invoke(_failureStream, {'id': uploadingModel.id});
   }
 
   @pragma('vm:entry-point')
   static Future<void> _onAuthFailed({
-    required String filePath,
+    required UploadingModel uploadingModel,
     required ServiceInstance service,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.addFileToFailed(filePath);
-    service.invoke(_authFailureStream, {'filePath': filePath});
+    await prefs.addFileToFailed(uploadingModel: uploadingModel);
+    service.invoke(_authFailureStream, {'id': uploadingModel.id});
   }
 
   // PRIVATE ---------------------------------------------------------------------------------------
@@ -275,10 +278,10 @@ class TusBGFileUploaderManager {
     SharedPreferences prefs,
     ServiceInstance service, [
     Iterable<Future<TusFileUploader>> processingUploads = const [],
+    Iterable<Future<TusFileUploader>> failedUploads = const [],
   ]) async {
     await prefs.reload();
     final pendingUploads = _getPendingUploads(prefs, service);
-    final failedUploads = _getFailedUploads(prefs, service);
     final headers = prefs.getHeaders();
     final total = processingUploads.length + pendingUploads.length + failedUploads.length;
     buildLogger(prefs).d(
@@ -301,14 +304,13 @@ class TusBGFileUploaderManager {
     ServiceInstance service,
   ) {
     final allUploadingFiles = prefs.getProcessingUploading();
-    final filesToUpload = <String>[];
-    final filesToRemove = <String>[];
-    for (var key in allUploadingFiles.keys) {
-      final file = File(key);
-      if (file.existsSync()) {
-        filesToUpload.add(key);
+    final filesToUpload = <UploadingModel>[];
+    final filesToRemove = <UploadingModel>[];
+    for (var model in allUploadingFiles) {
+      if (model.existsSync) {
+        filesToUpload.add(model);
       } else {
-        filesToRemove.add(key);
+        filesToRemove.add(model);
       }
     }
     for (var path in filesToRemove) {
@@ -316,17 +318,16 @@ class TusBGFileUploaderManager {
     }
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return allUploadingFiles.entries
-        .where((e) => !cache.containsKey(e.key) && filesToUpload.contains(e.key))
-        .map((entry) async {
+    return allUploadingFiles
+        .where((e) => !cache.containsKey(e) && filesToUpload.contains(e))
+        .map((model) async {
       final uploader = await _uploaderFromPath(
         service,
-        entry.key,
-        uploadUrl: entry.value,
+        model,
         metadata: metadata,
         headers: headers,
       );
-      cache[entry.key] = uploader;
+      cache[model.id] = uploader;
       return uploader;
     });
   }
@@ -337,38 +338,35 @@ class TusBGFileUploaderManager {
     ServiceInstance service,
   ) {
     final allPendingFiles = prefs.getPendingUploading();
-    final filesToUpload = <String>[];
-    final filesToRemove = <String>[];
-    for (var key in allPendingFiles.keys) {
-      final file = File(key);
-      if (file.existsSync()) {
-        filesToUpload.add(key);
+    final filesToUpload = <UploadingModel>[];
+    final filesToRemove = <UploadingModel>[];
+    for (var model in allPendingFiles) {
+      if (model.existsSync) {
+        filesToUpload.add(model);
       } else {
-        filesToRemove.add(key);
+        filesToRemove.add(model);
       }
     }
     for (var path in filesToRemove) {
       prefs.removeFile(path, pendingStoreKey);
     }
-    final customScheme = prefs.getCustomScheme();
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return allPendingFiles.entries
-        .where((e) => !cache.containsKey(e.key) && filesToUpload.contains(e.key))
-        .map((entry) async {
+    return allPendingFiles
+        .where((e) => !cache.containsKey(e) && filesToUpload.contains(e))
+        .map((model) async {
       final uploader = await _uploaderFromPath(
         service,
-        entry.key,
-        customScheme: customScheme,
+        model,
         metadata: metadata,
         headers: headers,
       );
-      cache[entry.key] = uploader;
+      cache[model.id] = uploader;
       final uploadUrl = await uploader.setupUploadUrl();
       if (uploadUrl != null) {
-        prefs.addFileToProcessing(entry.key, uploadUrl);
+        prefs.addFileToProcessing(uploadingModel: model);
       } else {
-        prefs.removeFile(entry.key, processingStoreKey);
+        prefs.removeFile(model, processingStoreKey);
       }
       return uploader;
     });
@@ -380,38 +378,35 @@ class TusBGFileUploaderManager {
     ServiceInstance service,
   ) {
     final allFailedFiles = prefs.getFailedUploading();
-    final filesToUpload = <String>[];
-    final filesToRemove = <String>[];
-    for (var key in allFailedFiles.keys) {
-      final file = File(key);
-      if (file.existsSync()) {
-        filesToUpload.add(key);
+    final filesToUpload = <UploadingModel>[];
+    final filesToRemove = <UploadingModel>[];
+    for (var model in allFailedFiles) {
+      if (model.existsSync) {
+        filesToUpload.add(model);
       } else {
-        filesToRemove.add(key);
+        filesToRemove.add(model);
       }
     }
     for (var path in filesToRemove) {
       prefs.removeFile(path, failedStoreKey);
     }
-    final customScheme = prefs.getCustomScheme();
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return allFailedFiles.entries
-        .where((e) => !cache.containsKey(e.key) && filesToUpload.contains(e.key))
-        .map((entry) async {
+    return allFailedFiles
+        .where((e) => !cache.containsKey(e) && filesToUpload.contains(e))
+        .map((model) async {
       final uploader = await _uploaderFromPath(
         service,
-        entry.key,
-        customScheme: customScheme,
+        model,
         metadata: metadata,
         headers: headers,
       );
-      cache[entry.key] = uploader;
+      cache[model.id] = uploader;
       final uploadUrl = await uploader.setupUploadUrl();
       if (uploadUrl != null) {
-        prefs.addFileToProcessing(entry.key, uploadUrl);
+        prefs.addFileToProcessing(uploadingModel: model);
       } else {
-        prefs.removeFile(entry.key, processingStoreKey);
+        prefs.removeFile(model, processingStoreKey);
       }
       return uploader;
     });
@@ -420,13 +415,11 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static Future<TusFileUploader> _uploaderFromPath(
     ServiceInstance service,
-    String path, {
-    String? uploadUrl,
-    String? customScheme,
+    UploadingModel uploadingModel, {
     Map<String, String>? headers,
     Map<String, String>? metadata,
   }) async {
-    final xFile = XFile(path);
+    final xFile = XFile(uploadingModel.path);
     final totalBytes = await xFile.length();
     final uploadMetadata = xFile.generateMetadata(originalMetadata: metadata);
     final resultHeaders = Map<String, String>.from(headers ?? {})
@@ -443,62 +436,32 @@ class TusBGFileUploaderManager {
     }
     final failOnLostConnection = prefs.getFailOnLostConnection();
     final loggerLevel = _objectsCache["logger_level"] ?? Level.off;
-    if (uploadUrl == null) {
-      return TusFileUploader.init(
-        path: path,
-        timeout: timeout,
-        baseUrl: Uri.parse(baseUrl + (customScheme ?? '')),
-        headers: resultHeaders,
-        failOnLostConnection: failOnLostConnection,
-        loggerLevel: loggerLevel,
-        progressCallback: (filePath, progress) async => _onProgress(
-          localPath: filePath,
-          progress: progress,
-          service: service,
-        ),
-        completeCallback: (filePath, uploadUrl) async => _onNextFileComplete(
-          service: service,
-          filePath: filePath,
-          uploadUrl: uploadUrl,
-        ),
-        failureCallback: (filePath, _) async => _onNextFileFailed(
-          filePath: filePath,
-          service: service,
-        ),
-        authCallback: (filePath, _) async => _onAuthFailed(
-          filePath: filePath,
-          service: service,
-        ),
-      );
-    } else {
-      return TusFileUploader.initAndSetup(
-        path: path,
-        timeout: timeout,
-        baseUrl: Uri.parse(baseUrl),
-        uploadUrl: Uri.parse(uploadUrl),
-        failOnLostConnection: failOnLostConnection,
-        headers: resultHeaders,
-        loggerLevel: loggerLevel,
-        progressCallback: (filePath, progress) async => _onProgress(
-          localPath: filePath,
-          progress: progress,
-          service: service,
-        ),
-        completeCallback: (filePath, uploadUrl) async => _onNextFileComplete(
-          service: service,
-          filePath: filePath,
-          uploadUrl: uploadUrl,
-        ),
-        failureCallback: (filePath, _) async => _onNextFileFailed(
-          filePath: filePath,
-          service: service,
-        ),
-        authCallback: (filePath, _) async => _onAuthFailed(
-          filePath: filePath,
-          service: service,
-        ),
-      );
-    }
+    return TusFileUploader(
+      uploadingModel: uploadingModel,
+      timeout: timeout,
+      baseUrl: baseUrl,
+      headers: resultHeaders,
+      failOnLostConnection: failOnLostConnection,
+      loggerLevel: loggerLevel,
+      progressCallback: (uploadingModel, progress) async => _onProgress(
+        uploadingModel: uploadingModel,
+        progress: progress,
+        service: service,
+      ),
+      completeCallback: (uploadingModel, uploadUrl) async => _onNextFileComplete(
+        service: service,
+        uploadingModel: uploadingModel,
+        uploadUrl: uploadUrl,
+      ),
+      failureCallback: (uploadingModel, _) async => _onNextFileFailed(
+        uploadingModel: uploadingModel,
+        service: service,
+      ),
+      authCallback: (uploadingModel, _) async => _onAuthFailed(
+        uploadingModel: uploadingModel,
+        service: service,
+      ),
+    );
   }
 
   @pragma('vm:entry-point')
