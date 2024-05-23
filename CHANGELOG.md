@@ -1,3 +1,7 @@
+## 0.0.15
+
+Updated version of tus_file_uploader
+
 ## 0.0.14
 
 Introduced handling uniqueness of uploading file over generated id

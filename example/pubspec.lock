@@ -512,10 +512,10 @@ packages:
     dependency: transitive
     description:
       name: tus_file_uploader
-      sha256: "9d2d97e2b113dbca306c0413244ae9597ea065ac3f7473ba7ab41f7ec79b5200"
+      sha256: e58b7b4cd1e0a7f8deb2632487f8e0bed00af1639da7a93da94cc5210a426149
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.18"
+    version: "0.0.19"
   typed_data:
     dependency: transitive
     description:
