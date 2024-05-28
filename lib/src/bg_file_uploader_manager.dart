@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -574,9 +575,14 @@ class TusBGFileUploaderManager {
       final descriptor = await ui.ImageDescriptor.encoded(buffer);
       var finalWidth = descriptor.width;
       var finalHeight = descriptor.height;
-      if (finalWidth > params.relativeWidth) {
-        finalHeight = (params.relativeWidth / finalWidth * finalHeight).toInt();
-        finalWidth = params.relativeWidth;
+      if (max(finalWidth, finalHeight) > params.relativeWidth) {
+        if (finalWidth > finalHeight) {
+          finalHeight = (params.relativeWidth / finalWidth * finalHeight).toInt();
+          finalWidth = params.relativeWidth;
+        } else {
+          finalWidth = (params.relativeWidth / finalHeight * finalWidth).toInt();
+          finalHeight = params.relativeWidth;
+        }
       }
       final xFile = await FlutterImageCompress.compressAndGetFile(
         file.absolute.path,
@@ -589,7 +595,9 @@ class TusBGFileUploaderManager {
       if (xFile != null) {
         final resultLength = await xFile.length();
         logger.d('COMPRESSED FILE SIZE: ${resultLength ~/ 1000}KB');
-        compressedFile = await File(xFile.path).create();
+        if (resultLength < length) {
+          compressedFile = await File(xFile.path).create();
+        }
       }
     }
     return compressedFile;

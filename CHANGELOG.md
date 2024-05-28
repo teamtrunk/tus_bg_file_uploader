@@ -1,3 +1,7 @@
+## 0.0.17
+
+Improved resolution scaling
+
 ## 0.0.16
 
 Added optional compression of uploading files
