@@ -1,3 +1,7 @@
+## 0.0.16
+
+Added optional compression of uploading files
+
 ## 0.0.15
 
 Updated version of tus_file_uploader

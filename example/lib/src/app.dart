@@ -156,18 +156,20 @@ class _AppState extends State<App> {
     uploadingManager.progressStream.listen((event) {
       final data = event as Map<String, dynamic>;
       final progress = data['progress'] as int;
-      final filePath = data['filePath'] as String;
-
-      onUploadingProgress(filePath, progress / 100);
+      // final id = data['id'] as String?;
+      //
+      // if (id != null) {
+      //   onUploadingProgress(id, progress / 100);
+      // }
     });
   }
 
   void subscribeFileCompletion() {
     uploadingManager.completionStream.listen((event) {
       final data = event as Map<String, dynamic>;
-      final filePath = data['filePath'] as String;
+      // final filePath = data['filePath'] as String;
       final uploadUrl = data['url'] as String;
-      files.firstWhere((element) => element.path == filePath).url = uploadUrl;
+      // files.firstWhere((element) => element.path == filePath).url = uploadUrl;
       updateUploadingStatus();
     });
   }
@@ -189,10 +191,10 @@ class _AppState extends State<App> {
   void subscribeFailure() {
     uploadingManager.failureStream.listen((event) {
       final data = event as Map<String, dynamic>;
-      final filePath = data['filePath'] as String;
-      setState(() {
-        onUploadingFailed(filePath);
-      });
+      // final filePath = data['filePath'] as String;
+      // setState(() {
+      //   onUploadingFailed(filePath);
+      // });
     });
   }
 

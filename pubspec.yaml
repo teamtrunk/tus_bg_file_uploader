@@ -1,6 +1,6 @@
 name: tus_bg_file_uploader
 description: A wrapper around tus_file_uploader that allows to upload file using background service
-version: 0.0.15
+version: 0.0.16
 homepage: https://github.com/programming-stayler/tus_bg_file_uploader
 
 environment:
@@ -19,8 +19,10 @@ dependencies:
 
   flutter_background_service_android: ^6.2.2
 
+  flutter_image_compress: ^2.3.0
+
   shared_preferences: ^2.0.15
-  tus_file_uploader: ^0.0.19
+  tus_file_uploader: ^0.0.22
   cross_file: ^0.3.3+2
   path_provider: ^2.0.11
   logger: ^2.2.0

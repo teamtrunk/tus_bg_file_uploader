@@ -10,6 +10,7 @@ const completeStoreKey = 'complete_uploading';
 const failedStoreKey = 'failed_uploading';
 const baseUrlStoreKey = 'base_files_uploading_url';
 const failOnLostConnectionStoreKey = 'fail_on_lost_connection';
+const compressParamsKey = 'compress_params';
 const appIconStoreKey = 'app_icon';
 const customSchemeKey = 'custom_scheme';
 const metadataKey = 'metadata';
@@ -52,6 +53,22 @@ extension SharedPreferencesUtils on SharedPreferences {
 
   Future<bool> setAppIcon(String value) async {
     return lock.synchronized(() => setString(appIconStoreKey, value));
+  }
+
+  CompressParams? getCompressParams() {
+    final encoded = getString(compressParamsKey);
+    if (encoded == null) {
+      return null;
+    }
+    final json = jsonDecode(encoded);
+    if (json is Map<String, dynamic>) {
+      return CompressParams.fromJson(json);
+    }
+    return null;
+  }
+
+  Future<bool> setCompressParams(CompressParams params) async {
+    return lock.synchronized(() => setString(compressParamsKey, jsonEncode(params.toJson())));
   }
 
   List<UploadingModel> getPendingUploading() {
@@ -142,6 +159,7 @@ extension SharedPreferencesUtils on SharedPreferences {
     await removeFile(uploadingModel, pendingStoreKey);
     await removeFile(uploadingModel, processingStoreKey);
     await removeFile(uploadingModel, failedStoreKey);
+    uploadingModel.compressedPath = null;
     await _updateMapEntry(uploadingModel, completeStoreKey);
   }
 
@@ -192,5 +210,31 @@ extension SharedPreferencesUtils on SharedPreferences {
 
       return setStringList(storeKey, result.map((e) => jsonEncode(e.toJson())).toList());
     });
+  }
+}
+
+const oneKB = 1000;
+
+class CompressParams {
+  final int relativeWidth;
+  final int idealSize;
+
+  const CompressParams({
+    this.relativeWidth = 1920,
+    this.idealSize = 1000 * oneKB,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'relativeWidth': relativeWidth,
+      'idealSize': idealSize,
+    };
+  }
+
+  factory CompressParams.fromJson(Map<String, dynamic> map) {
+    return CompressParams(
+      relativeWidth: map['relativeWidth'] as int,
+      idealSize: map['idealSize'] as int,
+    );
   }
 }

@@ -1,15 +1,17 @@
 import 'dart:async';
-import 'dart:ui';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart' as bsa;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_file_uploader/tus_file_uploader.dart';
-import 'package:cross_file/cross_file.dart' show XFile;
+import 'package:path_provider/path_provider.dart' as path_provider;
 
 import 'extensions.dart';
 
@@ -86,8 +88,9 @@ class TusBGFileUploaderManager {
   Future<void> setup(
     String baseUrl, {
     int? timeout,
-    Level loggerLevel = Level.off,
+    Level loggerLevel = Level.all,
     bool failOnLostConnection = false,
+    CompressParams? compressParams = const CompressParams(),
   }) async {
     final prefs = await SharedPreferences.getInstance();
     prefs.init();
@@ -95,6 +98,9 @@ class TusBGFileUploaderManager {
     prefs.setFailOnLostConnection(failOnLostConnection);
     prefs.setTimeout(timeout);
     prefs.setLoggerLevel(loggerLevel.value);
+    if (compressParams != null) {
+      prefs.setCompressParams(compressParams);
+    }
     final service = FlutterBackgroundService();
     await service.configure(
       androidConfiguration: AndroidConfiguration(
@@ -139,7 +145,7 @@ class TusBGFileUploaderManager {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
 
-    for(final model in uploadingModels){
+    for (final model in uploadingModels) {
       await prefs.addFileToPending(uploadingModel: model);
     }
 
@@ -169,7 +175,7 @@ class TusBGFileUploaderManager {
   // BACKGROUND ------------------------------------------------------------------------------------
   @pragma('vm:entry-point')
   static _onStart(ServiceInstance service) async {
-    DartPluginRegistrant.ensureInitialized();
+    ui.DartPluginRegistrant.ensureInitialized();
     if (service is bsa.AndroidServiceInstance) {
       service.setAsForegroundService();
     }
@@ -182,7 +188,7 @@ class TusBGFileUploaderManager {
   static FutureOr<bool> onIosBackground(ServiceInstance service) async {
     const workTime = 30;
     WidgetsFlutterBinding.ensureInitialized();
-    DartPluginRegistrant.ensureInitialized();
+    ui.DartPluginRegistrant.ensureInitialized();
     await Future.delayed(const Duration(seconds: workTime));
     return true;
   }
@@ -206,6 +212,10 @@ class TusBGFileUploaderManager {
     required String uploadUrl,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    final compressedPath = uploadingModel.compressedPath;
+    if (compressedPath != null) {
+      File(compressedPath).delete();
+    }
     await prefs.addFileToComplete(uploadingModel: uploadingModel);
     await _updateProgress(currentFileProgress: 1);
     service.invoke(_completionStream, {'id': uploadingModel.id, 'url': uploadUrl});
@@ -419,7 +429,25 @@ class TusBGFileUploaderManager {
     Map<String, String>? headers,
     Map<String, String>? metadata,
   }) async {
-    final xFile = XFile(uploadingModel.path);
+    final prefs = await SharedPreferences.getInstance();
+    var filePath = uploadingModel.path;
+    final compressParams = prefs.getCompressParams();
+    if (uploadingModel.compressedPath != null) {
+      filePath = uploadingModel.compressedPath!;
+    } else {
+      if (compressParams != null) {
+        final compressedFile = await compressImageIfNeeded(
+          prefs,
+          filePath,
+          compressParams,
+        );
+        if (compressedFile != null) {
+          filePath = compressedFile.path;
+        }
+      }
+    }
+    uploadingModel.compressedPath = filePath;
+    final xFile = XFile(filePath);
     final totalBytes = await xFile.length();
     final uploadMetadata = xFile.generateMetadata(originalMetadata: metadata);
     final resultHeaders = Map<String, String>.from(headers ?? {})
@@ -428,7 +456,6 @@ class TusBGFileUploaderManager {
         "Upload-Metadata": uploadMetadata,
         "Upload-Length": "$totalBytes",
       });
-    final prefs = await SharedPreferences.getInstance();
     final baseUrl = prefs.getBaseUrl();
     final timeout = prefs.getTimeout();
     if (baseUrl == null) {
@@ -508,20 +535,64 @@ class TusBGFileUploaderManager {
       title,
       '',
       NotificationDetails(
-          android: AndroidNotificationDetails(
-            'my_foreground',
-            'MY FOREGROUND SERVICE',
-            showProgress: true,
-            progress: progress,
-            maxProgress: 100,
-            icon: appIcon ?? 'ic_bg_service_small',
-            ongoing: true,
-          ),
-          iOS: DarwinNotificationDetails(
-              presentAlert: true,
-              subtitle: iosShowProgress ? 'Progress $progress%' : null,
-              interruptionLevel: InterruptionLevel.passive)),
+        android: AndroidNotificationDetails(
+          'my_foreground',
+          'MY FOREGROUND SERVICE',
+          showProgress: true,
+          progress: progress,
+          maxProgress: 100,
+          icon: appIcon ?? 'ic_bg_service_small',
+          ongoing: true,
+        ),
+        iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            subtitle: iosShowProgress ? 'Progress $progress%' : null,
+            interruptionLevel: InterruptionLevel.passive),
+      ),
     );
+  }
+
+  @pragma('vm:entry-point')
+  static Future<File?> compressImageIfNeeded(
+    SharedPreferences prefs,
+    String path,
+    CompressParams params,
+  ) async {
+    final file = File(path);
+    final length = await file.length();
+    final logger = buildLogger(prefs);
+    logger.d('ORIGINAL FILE SIZE: ${length ~/ 1000}KB');
+    File? compressedFile;
+    if (length > params.idealSize) {
+      final rootDir = await path_provider.getTemporaryDirectory();
+      final targetPath = '${rootDir.absolute.path}/${file.hashCode}.jpg';
+      final relation = params.idealSize / length;
+      final qualityKoef = 0.75 * relation;
+      final quality = (qualityKoef + relation) * 100;
+      final bytes = await file.readAsBytes();
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      var finalWidth = descriptor.width;
+      var finalHeight = descriptor.height;
+      if (finalWidth > params.relativeWidth) {
+        finalHeight = (params.relativeWidth / finalWidth * finalHeight).toInt();
+        finalWidth = params.relativeWidth;
+      }
+      final xFile = await FlutterImageCompress.compressAndGetFile(
+        file.absolute.path,
+        targetPath,
+        minWidth: finalWidth,
+        minHeight: finalHeight,
+        quality: quality.toInt(),
+        keepExif: true,
+      );
+      if (xFile != null) {
+        final resultLength = await xFile.length();
+        logger.d('COMPRESSED FILE SIZE: ${resultLength ~/ 1000}KB');
+        compressedFile = await File(xFile.path).create();
+      }
+    }
+    return compressedFile;
   }
 
   @pragma('vm:entry-point')
