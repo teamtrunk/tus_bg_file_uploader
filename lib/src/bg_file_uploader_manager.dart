@@ -91,14 +91,16 @@ class TusBGFileUploaderManager {
     int? timeout,
     Level loggerLevel = Level.all,
     bool failOnLostConnection = false,
+    bool clearStorageOnInit = true,
     CompressParams? compressParams = const CompressParams(),
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    prefs.init();
+    prefs.init(clearStorage: clearStorageOnInit);
     prefs.setBaseUrl(baseUrl);
     prefs.setFailOnLostConnection(failOnLostConnection);
     prefs.setTimeout(timeout);
     prefs.setLoggerLevel(loggerLevel.value);
+    prefs.setUploadAfterStartingService(false);
     if (compressParams != null) {
       prefs.setCompressParams(compressParams);
     }
@@ -145,6 +147,7 @@ class TusBGFileUploaderManager {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
+    await prefs.setUploadAfterStartingService(true);
 
     for (final model in uploadingModels) {
       await prefs.addFileToPending(uploadingModel: model);
@@ -161,6 +164,7 @@ class TusBGFileUploaderManager {
   void resumeAllUploading() async {
     final unfinishedFiles = await checkForUnfinishedUploads();
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setUploadAfterStartingService(true);
     buildLogger(prefs).d(
       "RESUME UPLOADING\n=> Unfinished files: ${unfinishedFiles.length}",
     );
@@ -176,6 +180,11 @@ class TusBGFileUploaderManager {
   // BACKGROUND ------------------------------------------------------------------------------------
   @pragma('vm:entry-point')
   static _onStart(ServiceInstance service) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    if (!prefs.getUploadAfterStartingService()) {
+      return;
+    }
     ui.DartPluginRegistrant.ensureInitialized();
     if (service is bsa.AndroidServiceInstance) {
       service.setAsForegroundService();

@@ -1,3 +1,7 @@
+## 0.0.18
+
+Improved setting up of the library
+
 ## 0.0.17
 
 Improved resolution scaling

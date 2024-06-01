@@ -16,19 +16,30 @@ const customSchemeKey = 'custom_scheme';
 const metadataKey = 'metadata';
 const headersKey = 'headers';
 const timeoutKey = 'timeout';
-const loggerLevel = "logger_level";
+const loggerLevel = 'logger_level';
+const uploadAfterStartingServiceKey = 'upload_after_starting_service';
 
 extension SharedPreferencesUtils on SharedPreferences {
   static final lock = Lock();
 
   // PUBLIC ----------------------------------------------------------------------------------------
-  Future<void> init() async {
+  Future<void> init({required bool clearStorage}) async {
     return lock.synchronized(() async {
-      await remove(pendingStoreKey);
-      await remove(processingStoreKey);
-      await remove(completeStoreKey);
-      await remove(failedStoreKey);
+      if (clearStorage) {
+        await remove(pendingStoreKey);
+        await remove(processingStoreKey);
+        await remove(completeStoreKey);
+        await remove(failedStoreKey);
+      }
     });
+  }
+
+  bool getUploadAfterStartingService() {
+    return getBool(uploadAfterStartingServiceKey) ?? true;
+  }
+
+  Future<bool> setUploadAfterStartingService(bool value) async {
+    return lock.synchronized(() => setBool(uploadAfterStartingServiceKey, value));
   }
 
   String? getBaseUrl() {
