@@ -166,6 +166,7 @@ extension SharedPreferencesUtils on SharedPreferences {
 
   Future<void> addFileToReadyForUpload({required UploadingModel uploadingModel}) async {
     await removeFile(uploadingModel, pendingStoreKey);
+    await removeFile(uploadingModel, failedStoreKey);
     await _updateMapEntry(uploadingModel, readyForUploadingStoreKey);
   }
 
@@ -272,8 +273,9 @@ extension FileUtils on File {
     final dirPath = '${(await getApplicationDocumentsDirectory()).path}/$managerDocumentsDir';
     Directory(dirPath).createSync(recursive: true);
     final documentsFullPath = '$dirPath/${DateTime.now().millisecondsSinceEpoch}$hashCode.jpg';
-
-    return copy(documentsFullPath);
+    final result = await copy(documentsFullPath);
+    await delete();
+    return result;
   }
 
   Future<bool> safeDelete() async {

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
-import 'package:collection/collection.dart' '';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -182,7 +181,7 @@ class TusBGFileUploaderManager {
     final allFailedFiles = prefs.getFailedUploading();
     for (final model in allFailedFiles) {
       if (modelIds.contains(model.id)) {
-        prefs.addFileToProcessing(uploadingModel: model);
+        await prefs.addFileToProcessing(uploadingModel: model);
       }
     }
     final service = FlutterBackgroundService();
@@ -201,9 +200,13 @@ class TusBGFileUploaderManager {
       ...prefs.getCompleteUploading(),
       ...prefs.getFailedUploading(),
     ];
-    UploadingModel? model = allModels.firstWhereOrNull(
-      (e) => e.id == modelId,
-    );
+    UploadingModel? model;
+    for (final m in allModels) {
+      if (m.id == modelId) {
+        model = m;
+        break;
+      }
+    }
     if (model != null) {
       prefs.removeFileFromEveryStore(model);
     }
@@ -227,7 +230,7 @@ class TusBGFileUploaderManager {
         );
       }
       model.path = compressedFile?.path ?? persistedFile.path;
-      sharedPreferences.addFileToReadyForUpload(uploadingModel: model);
+      await sharedPreferences.addFileToReadyForUpload(uploadingModel: model);
     }
   }
 

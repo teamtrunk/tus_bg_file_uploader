@@ -1,3 +1,7 @@
+## 0.0.20
+
+Fixed deleting original file after compression
+
 ## 0.0.19
 
 Improved uploading retry
