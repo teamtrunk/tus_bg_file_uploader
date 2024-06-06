@@ -21,6 +21,7 @@ const _completionStream = 'completion_stream';
 const _failureStream = 'failure_stream';
 const _authFailureStream = 'auth_stream';
 const _serverErrorStream = 'server_error';
+const _updatePathStream = 'update_page_stream';
 const managerDocumentsDir = 'bgFileUploaderManager';
 
 @pragma('vm:entry-point')
@@ -90,6 +91,10 @@ class TusBGFileUploaderManager {
 
   Stream<Map<String, dynamic>?> get serverErrorStream => FlutterBackgroundService().on(
         _serverErrorStream,
+      );
+
+  Stream<Map<String, dynamic>?> get updatePathStream => FlutterBackgroundService().on(
+        _updatePathStream,
       );
 
   Future<void> setup(
@@ -181,7 +186,11 @@ class TusBGFileUploaderManager {
     final allFailedFiles = prefs.getFailedUploading();
     for (final model in allFailedFiles) {
       if (modelIds.contains(model.id)) {
-        await prefs.addFileToProcessing(uploadingModel: model);
+        if (model.uploadUrl != null) {
+          await prefs.addFileToProcessing(uploadingModel: model);
+        } else {
+          await prefs.addFileToReadyForUpload(uploadingModel: model);
+        }
       }
     }
     final service = FlutterBackgroundService();
@@ -215,6 +224,7 @@ class TusBGFileUploaderManager {
   static Future<void> _persistFilesForUpload({
     List<UploadingModel>? uploadingModels,
     required SharedPreferences sharedPreferences,
+    ServiceInstance? service,
   }) async {
     final models = uploadingModels ?? sharedPreferences.getPendingUploading();
     final compressParams = sharedPreferences.getCompressParams();
@@ -230,6 +240,7 @@ class TusBGFileUploaderManager {
         );
       }
       model.path = compressedFile?.path ?? persistedFile.path;
+      service?.invoke.call(_updatePathStream, {model.id.toString(): model.path});
       await sharedPreferences.addFileToReadyForUpload(uploadingModel: model);
     }
   }
@@ -255,7 +266,10 @@ class TusBGFileUploaderManager {
   static _onStart(ServiceInstance service) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    await _persistFilesForUpload(sharedPreferences: prefs);
+    await _persistFilesForUpload(
+      sharedPreferences: prefs,
+      service: service,
+    );
     if (!prefs.getUploadAfterStartingService()) {
       _dispose(service);
       return;
@@ -382,7 +396,7 @@ class TusBGFileUploaderManager {
     Iterable<Future<TusFileUploader>> failedUploads = const [],
   ]) async {
     await prefs.reload();
-    final readyForUploadingUploads = _getreadyForUploadingUploads(prefs, service);
+    final readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
     final headers = prefs.getHeaders();
     final total = processingUploads.length + readyForUploadingUploads.length + failedUploads.length;
     buildLogger(prefs).d(
@@ -434,7 +448,7 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static Iterable<Future<TusFileUploader>> _getreadyForUploadingUploads(
+  static Iterable<Future<TusFileUploader>> _getReadyForUploadingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
