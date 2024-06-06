@@ -224,7 +224,7 @@ class _AppState extends State<App> {
   }
 
   void resumeAll() {
-    uploadingManager.resumeAllUploading();
+    uploadingManager.resumeAllUploads();
   }
 
   void onUploadingProgress(String filePath, double progress) {

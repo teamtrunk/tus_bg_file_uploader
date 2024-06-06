@@ -89,23 +89,23 @@ extension SharedPreferencesUtils on SharedPreferences {
   }
 
   List<UploadingModel> getPendingUploading() {
-    return _getFilesForKey(pendingStoreKey).toList();
+    return getFilesForKey(pendingStoreKey).toList();
   }
 
   List<UploadingModel> getReadyForUploading() {
-    return _getFilesForKey(readyForUploadingStoreKey).toList();
+    return getFilesForKey(readyForUploadingStoreKey).toList();
   }
 
   List<UploadingModel> getProcessingUploading() {
-    return _getFilesForKey(processingStoreKey).toList();
+    return getFilesForKey(processingStoreKey).toList();
   }
 
   List<UploadingModel> getCompleteUploading() {
-    return _getFilesForKey(completeStoreKey).toList();
+    return getFilesForKey(completeStoreKey).toList();
   }
 
   List<UploadingModel> getFailedUploading() {
-    return _getFilesForKey(failedStoreKey).toList();
+    return getFilesForKey(failedStoreKey).toList();
   }
 
   Map<String, String> getMetadata() {
@@ -218,8 +218,59 @@ extension SharedPreferencesUtils on SharedPreferences {
     });
   }
 
+  Future<List<UploadingModel>> actualizeUnfinishedUploads() async {
+    final readyForUploadingUploads = await _actualizeUploadsForKey(readyForUploadingStoreKey);
+    final processingUploads = await _actualizeUploadsForKey(processingStoreKey);
+    final failedUploads = await _actualizeUploadsForKey(failedStoreKey);
+    return [
+      ...readyForUploadingUploads,
+      ...processingUploads,
+      ...failedUploads,
+    ];
+  }
+
   // PRIVATE ---------------------------------------------------------------------------------------
-  Set<UploadingModel> _getFilesForKey(String storeKey) {
+  Future<List<UploadingModel>> _actualizeUploadsForKey(String key) async {
+    final docsPath = (await getApplicationDocumentsDirectory()).path;
+    final uploads = getFilesForKey(key).toList();
+    await _actualizeUploadsRecursively(uploads, key, docsPath);
+    return uploads;
+  }
+
+  Future<void> _actualizeUploadsRecursively(
+    List<UploadingModel> models,
+    String key,
+    String rootPath, [
+    int index = 0,
+  ]) async {
+    if (index >= models.length) {
+      return;
+    }
+    final model = models[index];
+    await _actualizeModel(model, key, rootPath);
+    await _actualizeUploadsRecursively(models, key, rootPath, index + 1);
+  }
+
+  Future<void> _actualizeModel(UploadingModel model, String key, String rootPath) async {
+    var file = File(model.path);
+    if (file.existsSync()) {
+      return;
+    }
+    final pathParts = model.path.split('$managerDocumentsDir/');
+    if (pathParts.length != 2) {
+      return;
+    }
+    final fileName = pathParts.last;
+    final nextPath = '$rootPath/$managerDocumentsDir/$fileName';
+    file = File(nextPath);
+    if (file.existsSync()) {
+      await removeFile(model, key);
+      model.path = nextPath;
+      await _updateMapEntry(model, key);
+    }
+  }
+
+  Set<UploadingModel> getFilesForKey(String storeKey) {
     final encodedResult = getStringList(storeKey);
     final Set<UploadingModel> result;
     if (encodedResult == null) {
@@ -233,7 +284,7 @@ extension SharedPreferencesUtils on SharedPreferences {
 
   Future<bool> _updateMapEntry(UploadingModel uploadingModel, String storeKey) async {
     return lock.synchronized(() async {
-      final result = _getFilesForKey(storeKey);
+      final result = getFilesForKey(storeKey);
       result.remove(uploadingModel);
       result.add(uploadingModel);
 

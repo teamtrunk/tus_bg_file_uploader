@@ -136,13 +136,8 @@ class TusBGFileUploaderManager {
 
   Future<List<UploadingModel>> checkForUnfinishedUploads() async {
     final prefs = await SharedPreferences.getInstance();
-    final readyForUploadingUploads = prefs.getReadyForUploading();
-    final processingUploads = prefs.getProcessingUploading();
-    final failedUploads = prefs.getFailedUploading();
-
-    return readyForUploadingUploads
-      ..addAll(processingUploads)
-      ..addAll(failedUploads);
+    await prefs.reload();
+    return prefs.actualizeUnfinishedUploads();
   }
 
   Future<List<UploadingModel>> checkForFailedUploads() async {
@@ -221,35 +216,11 @@ class TusBGFileUploaderManager {
     }
   }
 
-  static Future<void> _persistFilesForUpload({
-    List<UploadingModel>? uploadingModels,
-    required SharedPreferences sharedPreferences,
-    ServiceInstance? service,
-  }) async {
-    final models = uploadingModels ?? sharedPreferences.getPendingUploading();
-    final compressParams = sharedPreferences.getCompressParams();
-    for (final model in models) {
-      final notPersistedFile = File(model.path);
-      final persistedFile = await notPersistedFile.saveToDocumentsDir();
-      File? compressedFile;
-      if (compressParams != null) {
-        compressedFile = await compressImageIfNeeded(
-          sharedPreferences,
-          persistedFile.path,
-          compressParams,
-        );
-      }
-      model.path = compressedFile?.path ?? persistedFile.path;
-      service?.invoke.call(_updatePathStream, {model.id.toString(): model.path});
-      await sharedPreferences.addFileToReadyForUpload(uploadingModel: model);
-    }
-  }
-
-  void resumeAllUploading() async {
+  void resumeAllUploads() async {
     final unfinishedFiles = await checkForUnfinishedUploads();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setUploadAfterStartingService(true);
-    buildLogger(prefs).d(
+    _buildLogger(prefs).d(
       "RESUME UPLOADING\n=> Unfinished files: ${unfinishedFiles.length}",
     );
     if (unfinishedFiles.isEmpty) return;
@@ -399,7 +370,7 @@ class TusBGFileUploaderManager {
     final readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
     final headers = prefs.getHeaders();
     final total = processingUploads.length + readyForUploadingUploads.length + failedUploads.length;
-    buildLogger(prefs).d(
+    _buildLogger(prefs).d(
       "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
@@ -410,6 +381,31 @@ class TusBGFileUploaderManager {
       ]);
       await Future.wait(uploaderList.map((uploader) => uploader.upload(headers: headers)));
       await _uploadFiles(prefs, service);
+    }
+  }
+
+  @pragma('vm:entry-point')
+  static Future<void> _persistFilesForUpload({
+    List<UploadingModel>? uploadingModels,
+    required SharedPreferences sharedPreferences,
+    ServiceInstance? service,
+  }) async {
+    final models = uploadingModels ?? sharedPreferences.getPendingUploading();
+    final compressParams = sharedPreferences.getCompressParams();
+    for (final model in models) {
+      final notPersistedFile = File(model.path);
+      final persistedFile = await notPersistedFile.saveToDocumentsDir();
+      File? compressedFile;
+      if (compressParams != null) {
+        compressedFile = await _compressImageIfNeeded(
+          sharedPreferences,
+          persistedFile.path,
+          compressParams,
+        );
+      }
+      model.path = compressedFile?.path ?? persistedFile.path;
+      service?.invoke.call(_updatePathStream, {model.id.toString(): model.path});
+      await sharedPreferences.addFileToReadyForUpload(uploadingModel: model);
     }
   }
 
@@ -585,7 +581,7 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static Logger buildLogger(SharedPreferences prefs) {
+  static Logger _buildLogger(SharedPreferences prefs) {
     var logger = _objectsCache["logger"];
     if (logger == null) {
       final loggerLevel = prefs.getLoggerLevel();
@@ -646,14 +642,14 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static Future<File?> compressImageIfNeeded(
+  static Future<File?> _compressImageIfNeeded(
     SharedPreferences prefs,
     String path,
     CompressParams params,
   ) async {
     final file = File(path);
     final length = await file.length();
-    final logger = buildLogger(prefs);
+    final logger = _buildLogger(prefs);
     logger.d('ORIGINAL FILE SIZE: ${length ~/ 1000}KB');
     File? compressedFile;
     if (length > params.idealSize) {

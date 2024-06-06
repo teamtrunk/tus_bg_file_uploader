@@ -1,3 +1,7 @@
+## 0.0.22
+
+Implemented updating absolute files path base on files name
+
 ## 0.0.21
 
 Fixed updating file path after compression
