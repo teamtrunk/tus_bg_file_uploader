@@ -74,37 +74,37 @@ class TusBGFileUploaderManager {
   }
 
   Stream<Map<String, dynamic>?> get progressStream => FlutterBackgroundService().on(
-        _progressStream,
-      );
+    _progressStream,
+  );
 
   Stream<Map<String, dynamic>?> get completionStream => FlutterBackgroundService().on(
-        _completionStream,
-      );
+    _completionStream,
+  );
 
   Stream<Map<String, dynamic>?> get failureStream => FlutterBackgroundService().on(
-        _failureStream,
-      );
+    _failureStream,
+  );
 
   Stream<Map<String, dynamic>?> get authFailureStream => FlutterBackgroundService().on(
-        _authFailureStream,
-      );
+    _authFailureStream,
+  );
 
   Stream<Map<String, dynamic>?> get serverErrorStream => FlutterBackgroundService().on(
-        _serverErrorStream,
-      );
+    _serverErrorStream,
+  );
 
   Stream<Map<String, dynamic>?> get updatePathStream => FlutterBackgroundService().on(
-        _updatePathStream,
-      );
+    _updatePathStream,
+  );
 
   Future<void> setup(
-    String baseUrl, {
-    int? timeout,
-    Level loggerLevel = Level.all,
-    bool failOnLostConnection = false,
-    bool clearStorageOnInit = true,
-    CompressParams? compressParams = const CompressParams(),
-  }) async {
+      String baseUrl, {
+        int? timeout,
+        Level loggerLevel = Level.all,
+        bool failOnLostConnection = false,
+        bool clearStorageOnInit = true,
+        CompressParams? compressParams = const CompressParams(),
+      }) async {
     final prefs = await SharedPreferences.getInstance();
     prefs.init(clearStorage: clearStorageOnInit);
     prefs.setBaseUrl(baseUrl);
@@ -192,6 +192,13 @@ class TusBGFileUploaderManager {
     final isRunning = await service.isRunning();
     if (!isRunning) {
       await service.startService();
+    } else {
+      await Future.delayed(Duration(seconds: 5)).then((value) async {
+        final isRunning = await service.isRunning();
+        if (!isRunning) {
+          await service.startService();
+        }
+      });
     }
   }
 
@@ -361,11 +368,11 @@ class TusBGFileUploaderManager {
   // PRIVATE ---------------------------------------------------------------------------------------
   @pragma('vm:entry-point')
   static Future<void> _uploadFiles(
-    SharedPreferences prefs,
-    ServiceInstance service, [
-    Iterable<Future<TusFileUploader>> processingUploads = const [],
-    Iterable<Future<TusFileUploader>> failedUploads = const [],
-  ]) async {
+      SharedPreferences prefs,
+      ServiceInstance service, [
+        Iterable<Future<TusFileUploader>> processingUploads = const [],
+        Iterable<Future<TusFileUploader>> failedUploads = const [],
+      ]) async {
     await prefs.reload();
     final readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
     final headers = prefs.getHeaders();
@@ -411,9 +418,9 @@ class TusBGFileUploaderManager {
 
   @pragma('vm:entry-point')
   static Iterable<Future<TusFileUploader>> _getProcessingUploads(
-    SharedPreferences prefs,
-    ServiceInstance service,
-  ) {
+      SharedPreferences prefs,
+      ServiceInstance service,
+      ) {
     final allUploadingFiles = prefs.getProcessingUploading();
     final filesToUpload = <UploadingModel>[];
     final filesToRemove = <UploadingModel>[];
@@ -445,9 +452,9 @@ class TusBGFileUploaderManager {
 
   @pragma('vm:entry-point')
   static Iterable<Future<TusFileUploader>> _getReadyForUploadingUploads(
-    SharedPreferences prefs,
-    ServiceInstance service,
-  ) {
+      SharedPreferences prefs,
+      ServiceInstance service,
+      ) {
     final allReadyForUploadingFiles = prefs.getReadyForUploading();
     final filesToUpload = <UploadingModel>[];
     final filesToRemove = <UploadingModel>[];
@@ -485,9 +492,9 @@ class TusBGFileUploaderManager {
 
   @pragma('vm:entry-point')
   static Iterable<Future<TusFileUploader>> _getFailedUploads(
-    SharedPreferences prefs,
-    ServiceInstance service,
-  ) {
+      SharedPreferences prefs,
+      ServiceInstance service,
+      ) {
     final allFailedFiles = prefs.getFailedUploading();
     final filesToUpload = <UploadingModel>[];
     final filesToRemove = <UploadingModel>[];
@@ -525,11 +532,11 @@ class TusBGFileUploaderManager {
 
   @pragma('vm:entry-point')
   static Future<TusFileUploader> _uploaderFromPath(
-    ServiceInstance service,
-    UploadingModel uploadingModel, {
-    Map<String, String>? headers,
-    Map<String, String>? metadata,
-  }) async {
+      ServiceInstance service,
+      UploadingModel uploadingModel, {
+        Map<String, String>? headers,
+        Map<String, String>? metadata,
+      }) async {
     final prefs = await SharedPreferences.getInstance();
     var filePath = uploadingModel.path;
     final xFile = XFile(filePath);
@@ -643,10 +650,10 @@ class TusBGFileUploaderManager {
 
   @pragma('vm:entry-point')
   static Future<File?> _compressImageIfNeeded(
-    SharedPreferences prefs,
-    String path,
-    CompressParams params,
-  ) async {
+      SharedPreferences prefs,
+      String path,
+      CompressParams params,
+      ) async {
     final file = File(path);
     final length = await file.length();
     final logger = _buildLogger(prefs);
@@ -701,7 +708,7 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static Future _dispose(ServiceInstance service) async {
     await Future.delayed(const Duration(seconds: 2)).whenComplete(
-        () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
+            () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
     service.stopSelf();
     cache.clear();
   }

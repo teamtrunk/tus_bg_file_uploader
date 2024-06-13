@@ -1,3 +1,7 @@
+## 0.0.23
+
+Fixed resuming uploading after updating auth token
+
 ## 0.0.22
 
 Implemented updating absolute files path base on files name
