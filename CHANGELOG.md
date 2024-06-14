@@ -1,3 +1,7 @@
+## 0.0.24
+
+Added restriction of uploading only 5 photos at once
+
 ## 0.0.23
 
 Fixed resuming uploading after updating auth token
