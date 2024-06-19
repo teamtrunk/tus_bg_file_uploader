@@ -193,7 +193,7 @@ class TusBGFileUploaderManager {
     if (!isRunning) {
       await service.startService();
     } else {
-      await Future.delayed(Duration(seconds: 5)).then((value) async {
+      await Future.delayed(const Duration(seconds: 5)).then((value) async {
         final isRunning = await service.isRunning();
         if (!isRunning) {
           await service.startService();

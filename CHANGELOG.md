@@ -1,3 +1,7 @@
+## 0.0.25
+
+Added saving original exif of an image during compression
+
 ## 0.0.24
 
 Added restriction of uploading only 5 photos at once
