@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:logger/logger.dart';
 import 'package:native_exif/native_exif.dart';
+import 'package:path/path.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_bg_file_uploader/tus_bg_file_uploader.dart';
 import 'package:path_provider/path_provider.dart' as path_provider;
@@ -19,7 +20,7 @@ class ImageCompressor {
   ) async {
     Map<String, Object>? exifAttrs;
     if (params.saveExif) {
-     exifAttrs = await _persistExifAttrs(path);
+      exifAttrs = await _persistExifAttrs(path);
     }
     final file = File(path);
     final length = await file.length();
@@ -27,8 +28,8 @@ class ImageCompressor {
     File? compressedFile;
     if (length > params.idealSize) {
       final rootDir = await path_provider.getApplicationDocumentsDirectory();
-      final timeStamp = DateTime.now().millisecondsSinceEpoch;
-      final targetPath = '${rootDir.path}/$managerDocumentsDir/$timeStamp${file.hashCode}.jpg';
+      final fileName = basenameWithoutExtension(file.path);
+      final targetPath = '${rootDir.path}/$managerDocumentsDir/$fileName.jpg';
       final relation = params.idealSize / length;
       final qualityKoef = 0.75 * relation;
       final quality = (qualityKoef + relation) * 100;
@@ -39,10 +40,12 @@ class ImageCompressor {
       var finalHeight = descriptor.height;
       if (max(finalWidth, finalHeight) > params.relativeWidth) {
         if (finalWidth > finalHeight) {
-          finalHeight = (params.relativeWidth / finalWidth * finalHeight).toInt();
+          finalHeight =
+              (params.relativeWidth / finalWidth * finalHeight).toInt();
           finalWidth = params.relativeWidth;
         } else {
-          finalWidth = (params.relativeWidth / finalHeight * finalWidth).toInt();
+          finalWidth =
+              (params.relativeWidth / finalHeight * finalWidth).toInt();
           finalHeight = params.relativeWidth;
         }
       }
@@ -81,7 +84,8 @@ class ImageCompressor {
     return exifAttrs;
   }
 
-  static Future<void> restoreExifAttrs(File file, Map<String, Object> exifAttrs) async {
+  static Future<void> restoreExifAttrs(
+      File file, Map<String, Object> exifAttrs) async {
     final exif = await Exif.fromPath(file.path);
     await exif.writeAttributes(exifAttrs);
     await exif.close();
